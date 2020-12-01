@@ -1,6 +1,3 @@
-import { StatusBar } from "expo-status-bar";
-import React from "react";
-import { StyleSheet, Text, View } from "react-native";
 import { createAppContainer, createSwitchNavigator } from "react-navigation";
 import { createStackNavigator } from "react-navigation-stack";
 import { createBottomTabNavigator } from "react-navigation-tabs";
@@ -26,22 +23,4 @@ const switchNavigator = createSwitchNavigator({
   }),
 });
 
-const App = () => {
-  return (
-    <View style={styles.container}>
-      <Text>Placeholder while I setup navigation</Text>
-      <StatusBar style="auto" />
-    </View>
-  );
-};
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
-
-export default App;
+export default createAppContainer(switchNavigator);

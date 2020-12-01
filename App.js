@@ -1,4 +1,7 @@
+import React from "react";
+import { View, Text } from "react-native";
 import { createAppContainer, createSwitchNavigator } from "react-navigation";
+import { Provider as PaperProvider } from "react-native-paper";
 import { createStackNavigator } from "react-navigation-stack";
 import { createBottomTabNavigator } from "react-navigation-tabs";
 import AccountScreen from "./src/screens/AccountScreen";
@@ -11,7 +14,7 @@ import SpotListScreen from "./src/screens/SpotListScreen";
 const switchNavigator = createSwitchNavigator({
   loginFlow: createStackNavigator({
     Signin: SigninScreen,
-    SignUp: SignupScreen,
+    Signup: SignupScreen,
   }),
   mainFlow: createBottomTabNavigator({
     spotListFlow: createStackNavigator({
@@ -23,4 +26,12 @@ const switchNavigator = createSwitchNavigator({
   }),
 });
 
-export default createAppContainer(switchNavigator);
+const App = createAppContainer(switchNavigator);
+
+export default () => {
+  return (
+    <PaperProvider>
+      <App />
+    </PaperProvider>
+  );
+};

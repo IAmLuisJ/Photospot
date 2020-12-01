@@ -1,10 +1,27 @@
-import React from "react";
+import React, { useState } from "react";
 import { View, Text } from "react-native";
+import { Button, TextInput } from "react-native-paper";
 
-const SigninScreen = () => {
+const SigninScreen = ({ navigation }) => {
+  const [userName, setUserName] = useState("");
+  const [userPass, setUserPass] = useState("");
+
   return (
     <View>
-      <Text>Sign in here</Text>
+      <TextInput
+        label="Email"
+        value={userName}
+        onChangeText={(e) => setUserName(e)}
+      />
+      <TextInput
+        label="Password"
+        value={userPass}
+        onChangeText={(e) => setUserPass(e)}
+      />
+      <Button>Sign in</Button>
+      <Button onPress={() => navigation.navigate("Signup")}>
+        Not registered? Sign up
+      </Button>
     </View>
   );
 };

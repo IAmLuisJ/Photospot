@@ -7,12 +7,14 @@ const SigninScreen = ({ navigation }) => {
   const [userPass, setUserPass] = useState("");
 
   return (
-    <View>
+    <View style={styles.container}>
       <TextInput
         label="Email"
         value={userName}
         onChangeText={(e) => setUserName(e)}
         style={styles.input}
+        autoCapitalize="none"
+        autoCorrect={false}
       />
       <TextInput
         style={styles.input}
@@ -20,6 +22,8 @@ const SigninScreen = ({ navigation }) => {
         value={userPass}
         onChangeText={(e) => setUserPass(e)}
         secureTextEntry={true}
+        autoCapitalize="none"
+        autoCorrect={false}
       />
       <Button onPress={() => navigation.navigate("mainFlow")}>Sign in</Button>
       <Button onPress={() => navigation.navigate("Signup")}>
@@ -33,6 +37,11 @@ const styles = StyleSheet.create({
   input: {
     margin: 15,
     padding: 5,
+  },
+  container: {
+    flex: 1,
+    justifyContent: "center",
+    marginBottom: 250,
   },
 });
 

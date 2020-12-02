@@ -1,7 +1,6 @@
 import React, { useState } from "react";
 import { View, StyleSheet } from "react-native";
 import { Button, TextInput } from "react-native-paper";
-import Spacer from "./components/Spacer";
 
 const SignupScreen = ({ navigation }) => {
   const [email, setEmail] = useState("");
@@ -25,6 +24,8 @@ const SignupScreen = ({ navigation }) => {
         onChangeText={(e) => setUserPass(e)}
         secureTextEntry={true}
         style={styles.input}
+        autoCapitalize="none"
+        autoCorrect={false}
       />
       <Button onPress={() => navigation.navigate("mainFlow")}>Sign Up</Button>
       <Button onPress={() => navigation.navigate("Signin")}>

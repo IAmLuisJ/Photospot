@@ -45,4 +45,10 @@ const styles = StyleSheet.create({
   },
 });
 
+SigninScreen.navigationOptions = () => {
+  return {
+    headerShown: false,
+  };
+};
+
 export default SigninScreen;

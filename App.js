@@ -21,8 +21,8 @@ const switchNavigator = createSwitchNavigator({
       SpotList: SpotListScreen,
       SpotDetail: SpotDetailScreen,
     }),
-    Account: AccountScreen,
     SpotCreate: SpotCreateScreen,
+    Account: AccountScreen,
   }),
 });
 

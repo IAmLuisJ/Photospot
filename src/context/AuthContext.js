@@ -3,7 +3,7 @@ import createDataContext from "./createDataContext";
 
 const authReducer = (state, action) => {
   switch (action.type) {
-    case "ADD_ERR":
+    case "ADD_ERROR":
       return { ...state, errorMessage: action.payload };
     default:
       return state;
@@ -15,7 +15,8 @@ const signUp = (dispatch) => {
     try {
       const response = await spotServer.post("/signup", { email, password });
     } catch (err) {
-      dispatch({ type: "ADD_ERROR", payload: { error: err } });
+      console.log(err);
+      dispatch({ type: "ADD_ERROR", payload: "signup failed" });
     }
   };
 };

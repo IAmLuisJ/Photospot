@@ -27,7 +27,9 @@ const SignupScreen = ({ navigation }) => {
         autoCapitalize="none"
         autoCorrect={false}
       />
-      {state.errorMessage ? <Text>{state.errorMessage}</Text> : null}
+      {state.errorMessage ? (
+        <Text style={styles.error}>{state.errorMessage}</Text>
+      ) : null}
       <Button onPress={() => signUp({ email, password })}>Sign Up</Button>
       <Button onPress={() => navigation.navigate("Signin")}>
         Already Registered? Sign in here
@@ -45,6 +47,11 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     marginBottom: 250,
+  },
+  error: {
+    fontSize: 15,
+    color: "red",
+    marginLeft: 15,
   },
 });
 

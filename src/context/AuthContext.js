@@ -5,6 +5,10 @@ const authReducer = (state, action) => {
   switch (action.type) {
     case "ADD_ERROR":
       return { ...state, errorMessage: action.payload };
+    case "SIGN_ON":
+      return { ...state, jwt: action.payload };
+    case "SIGNED":
+      return { ...state, isSignedIn: true };
     default:
       return state;
   }
@@ -22,7 +26,15 @@ const signUp = (dispatch) => {
 };
 
 const signIn = (dispatch) => {
-  return ({ email, password }) => {};
+  return async ({ email, password }) => {
+    try {
+      const response = await spotServer.post("signin", { email, password });
+      dispatch({ type: "SIGN_ON", payload: response.data.token });
+      dispatch({ type: "SIGNED" });
+    } catch (err) {
+      console.log(err);
+    }
+  };
 };
 
 const signOut = (dispatch) => {
@@ -34,5 +46,5 @@ const signOut = (dispatch) => {
 export const { Provider, Context } = createDataContext(
   authReducer,
   { signIn, signOut, signUp },
-  { isSignedIn: false, errorMessage: "" }
+  { isSignedIn: false, errorMessage: "", jwt: "" }
 );

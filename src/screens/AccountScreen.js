@@ -7,7 +7,6 @@ const AccountScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <Text style={styles.textStyle}>Account</Text>
       <Button onPress={signOut}>Sign out</Button>
     </View>
   );

@@ -11,6 +11,8 @@ const authReducer = (state, action) => {
       return { ...state, jwt: action.payload };
     case "CLEAR_ERROR":
       return { ...state, errorMessage: "" };
+    case "SIGN_OUT":
+      return { ...state, jwt: null };
     default:
       return state;
   }
@@ -66,8 +68,10 @@ const signIn = (dispatch) => {
 };
 
 const signOut = (dispatch) => {
-  return () => {
-    //sign out
+  return async () => {
+    await AsyncStorage.removeItem("userToken");
+    dispatch({ type: "SIGN_OUT" });
+    navigate("loginFlow");
   };
 };
 

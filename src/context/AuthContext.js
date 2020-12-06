@@ -16,7 +16,23 @@ const authReducer = (state, action) => {
   }
 };
 
-const clearErrorMessage = (dispatch) => {
+const tryLocalSignIn = (dispatch) => {
+  return async () => {
+    try {
+      const localToken = await AsyncStorage.getItem("userToken");
+      if (localToken) {
+        dispatch({ type: "SIGN_ON", payload: localToken });
+        navigate("mainFlow");
+      } else {
+        navigate("loginFlow");
+      }
+    } catch (e) {
+      console.log(e);
+    }
+  };
+};
+
+const clearErrorMessage = (dispatch) => () => {
   dispatch({ type: "CLEAR_ERROR" });
 };
 
@@ -57,6 +73,6 @@ const signOut = (dispatch) => {
 
 export const { Provider, Context } = createDataContext(
   authReducer,
-  { signIn, signOut, signUp, clearErrorMessage },
+  { signIn, signOut, signUp, clearErrorMessage, tryLocalSignIn },
   { errorMessage: "", jwt: "" }
 );

@@ -8,10 +8,16 @@ const authReducer = (state, action) => {
     case "ADD_ERROR":
       return { ...state, errorMessage: action.payload };
     case "SIGN_ON":
-      return { ...state, errorMessage: "", jwt: action.payload };
+      return { ...state, jwt: action.payload };
+    case "CLEAR_ERROR":
+      return { ...state, errorMessage: "" };
     default:
       return state;
   }
+};
+
+const clearErrorMessage = (dispatch) => {
+  dispatch({ type: "CLEAR_ERROR" });
 };
 
 const signUp = (dispatch) => {
@@ -31,10 +37,14 @@ const signUp = (dispatch) => {
 const signIn = (dispatch) => {
   return async ({ email, password }) => {
     try {
-      const response = await spotServer.post("signin", { email, password });
+      const response = await spotServer.post("/signin", { email, password });
+      await AsyncStorage.setItem("userToken", response.data.token);
       dispatch({ type: "SIGN_ON", payload: response.data.token });
+      console.log("sign in success");
+      navigate("mainFlow");
     } catch (err) {
       console.log(err);
+      dispatch({ type: "ADD_ERROR", payload: "signup failed" });
     }
   };
 };
@@ -47,6 +57,6 @@ const signOut = (dispatch) => {
 
 export const { Provider, Context } = createDataContext(
   authReducer,
-  { signIn, signOut, signUp },
+  { signIn, signOut, signUp, clearErrorMessage },
   { errorMessage: "", jwt: "" }
 );

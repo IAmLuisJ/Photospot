@@ -34,7 +34,11 @@ export default () => {
   return (
     <PaperProvider>
       <AuthProvider>
-        <App ref={(navigator) => setNavigator(navigator)} />
+        <App
+          ref={(navigator) => {
+            setNavigator(navigator);
+          }}
+        />
       </AuthProvider>
     </PaperProvider>
   );

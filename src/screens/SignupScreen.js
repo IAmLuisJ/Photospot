@@ -2,6 +2,7 @@ import React, { useState, useContext } from "react";
 import { View, StyleSheet, Text } from "react-native";
 import { Button, TextInput } from "react-native-paper";
 import { Context as AuthContext } from "../context/AuthContext";
+import { NavigationEvents } from "react-navigation";
 
 const SignupScreen = ({ navigation }) => {
   const { state, signUp } = useContext(AuthContext);
@@ -27,13 +28,14 @@ const SignupScreen = ({ navigation }) => {
         autoCapitalize="none"
         autoCorrect={false}
       />
-      {state.errorMessage ? (
-        <Text style={styles.error}>{state.errorMessage}</Text>
-      ) : null}
       <Button onPress={() => signUp({ email, password })}>Sign Up</Button>
       <Button onPress={() => navigation.navigate("Signin")}>
         Already Registered? Sign in here
       </Button>
+      {state.errorMessage ? (
+        <Text style={styles.error}>{state.errorMessage}</Text>
+      ) : null}
+      <NavigationEvents onWillFocus={clearErrorMessage} />
     </View>
   );
 };

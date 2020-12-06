@@ -1,10 +1,11 @@
 import React, { useState, useContext } from "react";
 import { View, StyleSheet, Text } from "react-native";
 import { Button, TextInput } from "react-native-paper";
+import { NavigationEvents } from "react-navigation";
 import { Context as AuthContext } from "../context/AuthContext";
 
 const SigninScreen = ({ navigation }) => {
-  const { state, signIn } = useContext(AuthContext);
+  const { state, signIn, clearErrorMessage } = useContext(AuthContext);
   const [email, setUserName] = useState("");
   const [password, setUserPass] = useState("");
 
@@ -31,6 +32,10 @@ const SigninScreen = ({ navigation }) => {
       <Button onPress={() => navigation.navigate("Signup")}>
         Not registered? Sign up
       </Button>
+      {state.errorMessage ? (
+        <Text style={styles.error}>{state.errorMessage}</Text>
+      ) : null}
+      <NavigationEvents onWillFocus={clearErrorMessage} />
     </View>
   );
 };

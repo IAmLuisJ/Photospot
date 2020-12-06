@@ -1,14 +1,14 @@
 import spotServer from "../api/spotServer";
 import createDataContext from "./createDataContext";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+import { navigate } from "../components/navigationRef";
 
 const authReducer = (state, action) => {
   switch (action.type) {
     case "ADD_ERROR":
       return { ...state, errorMessage: action.payload };
     case "SIGN_ON":
-      return { ...state, jwt: action.payload };
-    case "SIGNED":
-      return { ...state, isSignedIn: true };
+      return { ...state, errorMessage: "", jwt: action.payload };
     default:
       return state;
   }
@@ -18,6 +18,9 @@ const signUp = (dispatch) => {
   return async ({ email, password }) => {
     try {
       const response = await spotServer.post("/signup", { email, password });
+      await AsyncStorage.setItem("userToken", response.data.token);
+      dispatch({ type: "SIGN_ON", payload: response.data.token });
+      navigate("mainFlow");
     } catch (err) {
       console.log(err);
       dispatch({ type: "ADD_ERROR", payload: "signup failed" });
@@ -30,7 +33,6 @@ const signIn = (dispatch) => {
     try {
       const response = await spotServer.post("signin", { email, password });
       dispatch({ type: "SIGN_ON", payload: response.data.token });
-      dispatch({ type: "SIGNED" });
     } catch (err) {
       console.log(err);
     }
@@ -46,5 +48,5 @@ const signOut = (dispatch) => {
 export const { Provider, Context } = createDataContext(
   authReducer,
   { signIn, signOut, signUp },
-  { isSignedIn: false, errorMessage: "", jwt: "" }
+  { errorMessage: "", jwt: "" }
 );

@@ -11,6 +11,7 @@ import SignupScreen from "./src/screens/SignupScreen";
 import SpotCreateScreen from "./src/screens/SpotCreateScreen";
 import SpotDetailScreen from "./src/screens/SpotDetailScreen";
 import SpotListScreen from "./src/screens/SpotListScreen";
+import { setNavigator } from "./src/components/navigationRef";
 
 const switchNavigator = createSwitchNavigator({
   loginFlow: createStackNavigator({
@@ -33,7 +34,7 @@ export default () => {
   return (
     <PaperProvider>
       <AuthProvider>
-        <App />
+        <App ref={(navigator) => setNavigator(navigator)} />
       </AuthProvider>
     </PaperProvider>
   );

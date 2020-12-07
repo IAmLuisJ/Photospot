@@ -22,7 +22,7 @@ const Map = () => {
 
   const startWatchingLocation = async () => {
     try {
-      const { granted } = await requestPermissionsAsync;
+      const { granted } = await requestPermissionsAsync();
       if (!granted) {
         console.log("Permission not granted");
       } else {
@@ -57,7 +57,6 @@ const Map = () => {
         <Polyline coordinates={points} />
       </MapView>
       {locationError ? <Text>Please turn on Location Services</Text> : null}
-      {userLocation ? <Text>{userLocation}</Text> : null}
     </View>
   );
 };

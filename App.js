@@ -1,8 +1,8 @@
 import React from "react";
-import { View, Text } from "react-native";
 import { createAppContainer, createSwitchNavigator } from "react-navigation";
 import { Provider as PaperProvider } from "react-native-paper";
 import { Provider as AuthProvider } from "./src/context/AuthContext";
+import { Provider as LocationProvider } from "./src/context/LocationContext";
 import { createStackNavigator } from "react-navigation-stack";
 import { createBottomTabNavigator } from "react-navigation-tabs";
 import AccountScreen from "./src/screens/AccountScreen";
@@ -36,11 +36,13 @@ export default () => {
   return (
     <PaperProvider>
       <AuthProvider>
-        <App
-          ref={(navigator) => {
-            setNavigator(navigator);
-          }}
-        />
+        <LocationProvider>
+          <App
+            ref={(navigator) => {
+              setNavigator(navigator);
+            }}
+          />
+        </LocationProvider>
       </AuthProvider>
     </PaperProvider>
   );

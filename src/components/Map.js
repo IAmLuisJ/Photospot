@@ -1,12 +1,12 @@
 import React, { useContext } from "react";
 import { View, Text, StyleSheet } from "react-native";
-import MapView, { Circle } from "react-native-maps";
+import MapView, { Circle, Polyline } from "react-native-maps";
 import { ActivityIndicator } from "react-native-paper";
 import { Context as LocationContext } from "../context/LocationContext";
 
 const Map = () => {
   const {
-    state: { currentLocation },
+    state: { currentLocation, locations },
   } = useContext(LocationContext);
 
   if (!currentLocation) {
@@ -33,6 +33,7 @@ const Map = () => {
           strokeColor="rgba(158, 158, 255, 1.0)"
           fillColor="rgba(158, 158, 255, 0.3)"
         />
+        <Polyline coordinates={locations.map((point) => point.coords)} />
       </MapView>
     </View>
   );

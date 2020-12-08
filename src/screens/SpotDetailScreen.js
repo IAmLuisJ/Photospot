@@ -1,12 +1,39 @@
-import React from "react";
-import { View, Text } from "react-native";
+import React, { useContext } from "react";
+import { View, Text, StyleSheet } from "react-native";
+import MapView, { Polyline } from "react-native-maps";
+import { Context as SpotContext } from "../context/SpotContext";
 
-const SpotDetailScreen = () => {
+const SpotDetailScreen = ({ navigation }) => {
+  const _id = navigation.getParam("_id");
+  const { state } = useContext(SpotContext);
+  const spot = state.find((t) => t._id == _id);
+  const initialCoordinates = spot.locations[0].coords;
   return (
     <View>
       <Text>Spot Detail Here</Text>
+      <Text>{spot.name}</Text>
+      <MapView
+        style={styles.map}
+        initialRegion={{
+          longitudeDelta: 0.01,
+          latitudeDelta: 0.01,
+          ...initialCoordinates,
+        }}
+      >
+        <Polyline
+          coordinates={spot.locations.map((item) => {
+            item.coords;
+          })}
+        />
+      </MapView>
     </View>
   );
 };
+
+const styles = StyleSheet.create({
+  map: {
+    height: 400,
+  },
+});
 
 export default SpotDetailScreen;

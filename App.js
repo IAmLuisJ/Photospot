@@ -3,6 +3,7 @@ import { createAppContainer, createSwitchNavigator } from "react-navigation";
 import { Provider as PaperProvider } from "react-native-paper";
 import { Provider as AuthProvider } from "./src/context/AuthContext";
 import { Provider as LocationProvider } from "./src/context/LocationContext";
+import { Provider as SpotProvider } from "./src/context/SpotContext";
 import { createStackNavigator } from "react-navigation-stack";
 import { createBottomTabNavigator } from "react-navigation-tabs";
 import AccountScreen from "./src/screens/AccountScreen";
@@ -35,15 +36,17 @@ const App = createAppContainer(switchNavigator);
 export default () => {
   return (
     <PaperProvider>
-      <AuthProvider>
-        <LocationProvider>
-          <App
-            ref={(navigator) => {
-              setNavigator(navigator);
-            }}
-          />
-        </LocationProvider>
-      </AuthProvider>
+      <SpotProvider>
+        <AuthProvider>
+          <LocationProvider>
+            <App
+              ref={(navigator) => {
+                setNavigator(navigator);
+              }}
+            />
+          </LocationProvider>
+        </AuthProvider>
+      </SpotProvider>
     </PaperProvider>
   );
 };

@@ -2,11 +2,13 @@ import { LocationSubscriber } from "expo-location/build/LocationSubscribers";
 import React, { useContext, useState } from "react";
 import { Button, TextInput } from "react-native-paper";
 import { Context as LocationContext } from "../context/LocationContext";
+import useSaveSpot from "../hooks/useSaveSpot";
 
 const TrackForm = () => {
   const { state, changeName, startRecording, stopRecording } = useContext(
     LocationContext
   );
+  const [saveSpot] = useSaveSpot();
 
   return (
     <>
@@ -20,7 +22,9 @@ const TrackForm = () => {
       ) : (
         <Button onPress={startRecording}>Start Tracking</Button>
       )}
-      {!recording || locations.length ? <Button>Save</Button> : null}
+      {!state.recording || state.locations.length ? (
+        <Button onPress={saveSpot}>Save</Button>
+      ) : null}
     </>
   );
 };

@@ -1,16 +1,14 @@
 import React, { useContext } from "react";
 import { View, Text, FlatList, TouchableOpacity } from "react-native";
-import { List } from "react-native-paper";
 import { NavigationEvents } from "react-navigation";
 import { Context as SpotContext } from "../context/SpotContext";
+import { ListItem } from "react-native-elements";
 
 const SpotListScreen = ({ navigation }) => {
   const { state, fetchSpots } = useContext(SpotContext);
   return (
     <View>
       <NavigationEvents onWillFocus={fetchSpots} />
-      <Text>Spot list</Text>
-
       <FlatList
         data={state}
         keyExtractor={(item) => item._id}
@@ -21,7 +19,10 @@ const SpotListScreen = ({ navigation }) => {
                 navigation.navigate("SpotDetail", { _id: item._id })
               }
             >
-              <List.Item title={item.name} />
+              <ListItem>
+                <ListItem.Title>{item.name}</ListItem.Title>
+                <ListItem.Chevron />
+              </ListItem>
             </TouchableOpacity>
           );
         }}

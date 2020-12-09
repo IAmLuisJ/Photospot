@@ -4,13 +4,13 @@ import MapView, { Polyline } from "react-native-maps";
 import { Context as SpotContext } from "../context/SpotContext";
 
 const SpotDetailScreen = ({ navigation }) => {
-  const _id = navigation.getParam("_id");
   const { state } = useContext(SpotContext);
-  const spot = state.find((t) => t._id == _id);
+  const _id = navigation.getParam("_id");
+  const spot = state.find((t) => t._id === _id);
   const initialCoordinates = spot.locations[0].coords;
+
   return (
     <View>
-      <Text>Spot Detail Here</Text>
       <Text>{spot.name}</Text>
       <MapView
         style={styles.map}
@@ -20,11 +20,7 @@ const SpotDetailScreen = ({ navigation }) => {
           ...initialCoordinates,
         }}
       >
-        <Polyline
-          coordinates={spot.locations.map((item) => {
-            item.coords;
-          })}
-        />
+        <Polyline coordinates={spot.locations.map((loc) => loc.coords)} />
       </MapView>
     </View>
   );

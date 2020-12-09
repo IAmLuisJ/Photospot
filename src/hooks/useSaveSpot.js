@@ -12,8 +12,6 @@ export default () => {
 
   const saveSpot = async () => {
     await createSpot(name, locations);
-    console.log(name);
-    console.log(locations);
     clearSpot();
     navigate("SpotList");
   };

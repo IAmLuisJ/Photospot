@@ -2,6 +2,7 @@ import React, { useContext } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import { Button } from "react-native-paper";
 import { Context as AuthContext } from "../context/AuthContext";
+import { FontAwesome } from "@expo/vector-icons";
 const AccountScreen = ({ navigation }) => {
   const { signOut } = useContext(AuthContext);
 
@@ -23,5 +24,12 @@ const styles = StyleSheet.create({
     marginBottom: 250,
   },
 });
+
+AccountScreen.navigationOptions = () => {
+  return {
+    title: "Account",
+    tabBarIcon: <FontAwesome name="gear" size={20} />,
+  };
+};
 
 export default AccountScreen;

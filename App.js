@@ -14,6 +14,19 @@ import SpotDetailScreen from "./src/screens/SpotDetailScreen";
 import SpotListScreen from "./src/screens/SpotListScreen";
 import LoadingScreen from "./src/screens/LoadingScreen";
 import { setNavigator } from "./src/components/navigationRef";
+import { FontAwesome } from "@expo/vector-icons";
+
+const spotListFlow = createStackNavigator({
+  SpotList: SpotListScreen,
+  SpotDetail: SpotDetailScreen,
+});
+
+spotListFlow.navigationOptions = () => {
+  return {
+    title: "Spot List",
+    tabBarIcon: <FontAwesome name="list" size={20} />,
+  };
+};
 
 const switchNavigator = createSwitchNavigator({
   loading: LoadingScreen,
@@ -22,10 +35,7 @@ const switchNavigator = createSwitchNavigator({
     Signup: SignupScreen,
   }),
   mainFlow: createBottomTabNavigator({
-    spotListFlow: createStackNavigator({
-      SpotList: SpotListScreen,
-      SpotDetail: SpotDetailScreen,
-    }),
+    spotListFlow: spotListFlow,
     SpotCreate: SpotCreateScreen,
     Account: AccountScreen,
   }),

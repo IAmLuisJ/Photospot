@@ -1,6 +1,6 @@
 import React, { useContext } from "react";
 import { View, Text, FlatList, TouchableOpacity } from "react-native";
-import { Button, List } from "react-native-paper";
+import { List } from "react-native-paper";
 import { NavigationEvents } from "react-navigation";
 import { Context as SpotContext } from "../context/SpotContext";
 

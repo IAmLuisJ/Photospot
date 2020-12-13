@@ -1,6 +1,12 @@
 import React, { useState, useContext } from "react";
-import { View, StyleSheet, Text } from "react-native";
-import { Button, TextInput } from "react-native-paper";
+import { View, StyleSheet } from "react-native";
+import {
+  Button,
+  TextInput,
+  Checkbox,
+  Text,
+  Snackbar,
+} from "react-native-paper";
 import { NavigationEvents } from "react-navigation";
 import { Context as AuthContext } from "../context/AuthContext";
 
@@ -8,6 +14,7 @@ const SigninScreen = ({ navigation }) => {
   const { state, signIn, clearErrorMessage } = useContext(AuthContext);
   const [email, setUserName] = useState("");
   const [password, setUserPass] = useState("");
+  const [checked, setChecked] = useState(true);
 
   return (
     <View style={styles.container}>
@@ -28,12 +35,28 @@ const SigninScreen = ({ navigation }) => {
         autoCapitalize="none"
         autoCorrect={false}
       />
-      <Button onPress={() => signIn({ email, password })}>Sign in</Button>
+      <View style={styles.checkStyle}>
+        <Text>Remember Me</Text>
+        <View style={styles.checkBoxStyle}>
+          <Checkbox
+            style={styles.checkBoxStyle}
+            status={checked ? "checked" : "unchecked"}
+            onPress={() => setChecked(!checked)}
+          />
+        </View>
+      </View>
+      <Button
+        style={styles.signInButton}
+        mode="contained"
+        onPress={() => signIn({ email, password })}
+      >
+        Sign in
+      </Button>
       <Button onPress={() => navigation.navigate("Signup")}>
         Not registered? Sign up
       </Button>
       {state.errorMessage ? (
-        <Text style={styles.error}>{state.errorMessage}</Text>
+        <Snackbar visible={true}>{state.errorMessage}</Snackbar>
       ) : null}
       <NavigationEvents onWillFocus={clearErrorMessage} />
     </View>
@@ -49,6 +72,25 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     marginBottom: 250,
+  },
+  checkStyle: {
+    margin: 20,
+    padding: 5,
+    justifyContent: "center",
+    alignItems: "center",
+    flexDirection: "row",
+  },
+  checkBoxStyle: {
+    borderWidth: 1,
+    borderColor: "black",
+    marginLeft: 10,
+  },
+  signInButton: {
+    margin: 20,
+  },
+  error: {
+    alignSelf: "center",
+    justifyContent: "center",
   },
 });
 

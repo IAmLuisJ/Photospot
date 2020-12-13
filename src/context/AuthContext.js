@@ -62,7 +62,7 @@ const signIn = (dispatch) => {
       navigate("mainFlow");
     } catch (err) {
       console.log(err);
-      dispatch({ type: "ADD_ERROR", payload: "signup failed" });
+      dispatch({ type: "ADD_ERROR", payload: "Sign In Failed" });
     }
   };
 };

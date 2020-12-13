@@ -31,4 +31,10 @@ const SpotListScreen = ({ navigation }) => {
   );
 };
 
+SpotListScreen.navigationOptions = () => {
+  return {
+    title: "Spots",
+  };
+};
+
 export default SpotListScreen;

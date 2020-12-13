@@ -1,5 +1,5 @@
 import React, { useCallback, useContext } from "react";
-import { View, Text } from "react-native";
+import { Text, ScrollView, SafeAreaView } from "react-native";
 import { Button } from "react-native-paper";
 import Map from "../components/Map";
 import { withNavigationFocus } from "react-navigation";
@@ -21,12 +21,12 @@ const SpotCreateScreen = ({ isFocused }) => {
   const [err] = useLocation(isFocused || state.recording, callback);
 
   return (
-    <View style={{ margin: 15, flex: 1, justifyContent: "center" }}>
+    <ScrollView contentContainerStyle={{ paddingTop: 35 }}>
       <Button>Create new Spot</Button>
       <Map />
       {err ? <Text>Please turn on Location Services</Text> : null}
       <TrackForm />
-    </View>
+    </ScrollView>
   );
 };
 

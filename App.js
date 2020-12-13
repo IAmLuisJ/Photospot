@@ -1,6 +1,6 @@
 import React from "react";
 import { createAppContainer, createSwitchNavigator } from "react-navigation";
-import { Provider as PaperProvider } from "react-native-paper";
+import { DefaultTheme, Provider as PaperProvider } from "react-native-paper";
 import { Provider as AuthProvider } from "./src/context/AuthContext";
 import { Provider as LocationProvider } from "./src/context/LocationContext";
 import { Provider as SpotProvider } from "./src/context/SpotContext";
@@ -15,6 +15,15 @@ import SpotListScreen from "./src/screens/SpotListScreen";
 import LoadingScreen from "./src/screens/LoadingScreen";
 import { setNavigator } from "./src/components/navigationRef";
 import { FontAwesome } from "@expo/vector-icons";
+
+const theme = {
+  ...DefaultTheme,
+  colors: {
+    ...DefaultTheme.colors,
+    primary: "blue",
+    accent: "black",
+  },
+};
 
 const spotListFlow = createStackNavigator({
   SpotList: SpotListScreen,
@@ -45,7 +54,7 @@ const App = createAppContainer(switchNavigator);
 
 export default () => {
   return (
-    <PaperProvider>
+    <PaperProvider theme={theme}>
       <SpotProvider>
         <AuthProvider>
           <LocationProvider>

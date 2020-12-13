@@ -3,6 +3,7 @@ import { View, StyleSheet, Text } from "react-native";
 import { Button, TextInput } from "react-native-paper";
 import { Context as AuthContext } from "../context/AuthContext";
 import { NavigationEvents } from "react-navigation";
+import RememberCheckbox from "../components/RememberCheckbox";
 
 const SignupScreen = ({ navigation }) => {
   const { state, signUp, clearErrorMessage } = useContext(AuthContext);
@@ -28,7 +29,14 @@ const SignupScreen = ({ navigation }) => {
         autoCapitalize="none"
         autoCorrect={false}
       />
-      <Button onPress={() => signUp({ email, password })}>Sign Up</Button>
+      <RememberCheckbox />
+      <Button
+        style={styles.signUpButton}
+        onPress={() => signUp({ email, password })}
+        mode="contained"
+      >
+        Sign Up
+      </Button>
       <Button onPress={() => navigation.navigate("Signin")}>
         Already Registered? Sign in here
       </Button>
@@ -49,6 +57,9 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     marginBottom: 250,
+  },
+  signUpButton: {
+    margin: 20,
   },
   error: {
     fontSize: 15,

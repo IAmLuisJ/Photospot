@@ -1,12 +1,6 @@
 import React, { useState, useContext } from "react";
 import { View, StyleSheet } from "react-native";
-import {
-  Button,
-  TextInput,
-  Checkbox,
-  Text,
-  Snackbar,
-} from "react-native-paper";
+import { Button, TextInput, Snackbar } from "react-native-paper";
 import { NavigationEvents } from "react-navigation";
 import RememberCheckbox from "../components/RememberCheckbox";
 import { Context as AuthContext } from "../context/AuthContext";

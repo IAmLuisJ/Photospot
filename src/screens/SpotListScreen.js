@@ -16,7 +16,10 @@ const SpotListScreen = ({ navigation }) => {
           return (
             <TouchableOpacity
               onPress={() =>
-                navigation.navigate("SpotDetail", { _id: item._id })
+                navigation.navigate("SpotDetail", {
+                  _id: item._id,
+                  name: item.name,
+                })
               }
             >
               <ListItem>

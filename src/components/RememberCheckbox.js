@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { View, StyleSheet } from "react-native";
-import { Text, Checkbox } from "react-native-paper";
+import { Text, Checkbox, Switch } from "react-native-paper";
 
 const RememberCheckbox = () => {
   const [checked, setChecked] = useState(true);
@@ -8,11 +8,7 @@ const RememberCheckbox = () => {
     <View style={styles.checkStyle}>
       <Text>Remember Me</Text>
       <View style={styles.checkBoxStyle}>
-        <Checkbox
-          style={styles.checkBoxStyle}
-          status={checked ? "checked" : "unchecked"}
-          onPress={() => setChecked(!checked)}
-        />
+        <Switch value={checked} onValueChange={() => setChecked(!checked)} />
       </View>
     </View>
   );
@@ -27,8 +23,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
   },
   checkBoxStyle: {
-    borderWidth: 1,
-    borderColor: "black",
     marginLeft: 10,
   },
 });

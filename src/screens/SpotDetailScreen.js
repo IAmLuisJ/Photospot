@@ -11,22 +11,22 @@ const SpotDetailScreen = ({ navigation }) => {
   const initialCoordinates = spot.locations[0].coords;
 
   return (
-    <ScrollView>
-      <Text>{spot.title}</Text>
-      <MapView
-        style={styles.map}
-        initialRegion={{
-          longitudeDelta: 0.01,
-          latitudeDelta: 0.01,
-          ...initialCoordinates,
-        }}
-      >
-        <Polyline coordinates={spot.locations.map((loc) => loc.coords)} />
-      </MapView>
+    <ScrollView contentContainerStyle={{ paddingTop: 50 }}>
       <Card>
+        <MapView
+          style={styles.map}
+          initialRegion={{
+            longitudeDelta: 0.01,
+            latitudeDelta: 0.01,
+            ...initialCoordinates,
+          }}
+        >
+          <Polyline coordinates={spot.locations.map((loc) => loc.coords)} />
+        </MapView>
+
         <Card.Title title={spot.title} />
         <Card.Content>
-          <Title>{spot.title}</Title>
+          <Title>{spot.name}</Title>
           <Paragraph>Paragraph Content</Paragraph>
         </Card.Content>
       </Card>
@@ -39,5 +39,11 @@ const styles = StyleSheet.create({
     height: 400,
   },
 });
+
+SpotDetailScreen.navigationOptions = ({ navigation }) => {
+  return {
+    title: navigation.getParam("name"),
+  };
+};
 
 export default SpotDetailScreen;

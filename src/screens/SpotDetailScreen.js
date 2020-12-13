@@ -1,5 +1,5 @@
 import React, { useContext } from "react";
-import { View, Text, StyleSheet, ScrollView } from "react-native";
+import { StyleSheet, ScrollView } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
 import { Card, Title, Paragraph, Button } from "react-native-paper";
 import { Context as SpotContext } from "../context/SpotContext";
@@ -8,7 +8,7 @@ const SpotDetailScreen = ({ navigation }) => {
   const { state } = useContext(SpotContext);
   const _id = navigation.getParam("_id");
   const spot = state.find((t) => t._id === _id);
-  const initialCoordinates = spot.locations[0].coords;
+  const initialCoordinates = spot.location.coords;
 
   return (
     <ScrollView contentContainerStyle={{ paddingTop: 50 }}>
@@ -28,6 +28,12 @@ const SpotDetailScreen = ({ navigation }) => {
         <Card.Content>
           <Title>{spot.name}</Title>
           <Paragraph>Paragraph Content</Paragraph>
+          <Card.Actions>
+            <Button mode="contained" icon="camera">
+              Share
+            </Button>
+            <Button>Delete</Button>
+          </Card.Actions>
         </Card.Content>
       </Card>
     </ScrollView>

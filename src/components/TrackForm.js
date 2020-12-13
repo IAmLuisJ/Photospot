@@ -1,4 +1,3 @@
-import { LocationSubscriber } from "expo-location/build/LocationSubscribers";
 import React, { useContext } from "react";
 import { Button, TextInput } from "react-native-paper";
 import { Context as LocationContext } from "../context/LocationContext";

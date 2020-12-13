@@ -11,9 +11,9 @@ const spotReducer = (state, action) => {
 };
 
 const createSpot = (dispatch) => {
-  return async (name, description, location) => {
+  return async (name, locations) => {
     try {
-      await spotServer.post("/spots", { name, description, location });
+      await spotServer.post("/tracks", { name, locations });
     } catch (err) {
       console.log(err);
     }
@@ -22,22 +22,13 @@ const createSpot = (dispatch) => {
 
 const fetchSpots = (dispatch) => {
   return async () => {
-    const response = await spotServer.get("/spots");
+    const response = await spotServer.get("/tracks");
     dispatch({ type: "FETCH_SPOTS", payload: response.data });
-  };
-};
-
-const deleteSpot = (dispatch) => {
-  return async (_id) => {
-    const response = await spotServer.delete("/spots", {
-      _id: _id,
-    });
-    dispatch({ type: "DELETE_SPOT" });
   };
 };
 
 export const { Provider, Context } = createDataContext(
   spotReducer,
-  { fetchSpots, createSpot, deleteSpot },
+  { fetchSpots, createSpot },
   []
 );

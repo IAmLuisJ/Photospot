@@ -6,12 +6,15 @@ import { navigate } from "../components/navigationRef";
 export default () => {
   const { createSpot } = useContext(SpotContext);
   const {
-    state: { name, locations },
+    state: { name, description, location },
     clearSpot,
   } = useContext(LocationContext);
 
   const saveSpot = async () => {
-    await createSpot(name, locations);
+    console.log(name);
+    console.log(description);
+    console.log(location);
+    await createSpot(name, description, location);
     clearSpot();
     navigate("SpotList");
   };

@@ -20,7 +20,9 @@ const TrackForm = () => {
       {state.recording ? (
         <Button onPress={stopRecording}>Stop Tracking</Button>
       ) : (
-        <Button onPress={startRecording}>Start Tracking</Button>
+        <Button mode="contained" onPress={startRecording}>
+          Start Tracking
+        </Button>
       )}
       {!state.recording && state.locations.length ? (
         <Button onPress={saveSpot}>Save</Button>

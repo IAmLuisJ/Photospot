@@ -1,4 +1,4 @@
-import React, { useContext } from "react";
+import React, { useContext, useEffect } from "react";
 import { View, Text, StyleSheet } from "react-native";
 import MapView, { Polyline } from "react-native-maps";
 import { Context as SpotContext } from "../context/SpotContext";
@@ -8,10 +8,15 @@ const SpotDetailScreen = ({ navigation }) => {
   const _id = navigation.getParam("_id");
   const spot = state.find((t) => t._id === _id);
   const initialCoordinates = spot.locations[0].coords;
+  const title = spot.name;
+
+  useEffect(() => {
+    navigation.setOptions({ title: title });
+  }, []);
 
   return (
     <View>
-      <Text>{spot.name}</Text>
+      <Text>{title}</Text>
       <MapView
         style={styles.map}
         initialRegion={{

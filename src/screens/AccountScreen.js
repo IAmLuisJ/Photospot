@@ -8,7 +8,9 @@ const AccountScreen = ({ navigation }) => {
 
   return (
     <View style={styles.container}>
-      <Button onPress={signOut}>Sign out</Button>
+      <Button mode="contained" onPress={signOut} style={styles.buttonStyle}>
+        Sign out
+      </Button>
     </View>
   );
 };
@@ -17,6 +19,9 @@ const styles = StyleSheet.create({
   textStyle: {
     fontSize: 15,
     margin: 15,
+  },
+  buttonStyle: {
+    margin: 20,
   },
   container: {
     flex: 1,

@@ -1,11 +1,11 @@
 import React, { useContext } from "react";
 import { StyleSheet, ScrollView } from "react-native";
-import MapView, { Polyline } from "react-native-maps";
+import MapView, { Marker } from "react-native-maps";
 import { Card, Title, Paragraph, Button } from "react-native-paper";
 import { Context as SpotContext } from "../context/SpotContext";
 
 const SpotDetailScreen = ({ navigation }) => {
-  const { state } = useContext(SpotContext);
+  const { state, deleteSpot } = useContext(SpotContext);
   const _id = navigation.getParam("_id");
   const spot = state.find((t) => t._id === _id);
   const initialCoordinates = spot.location.coords;
@@ -21,18 +21,23 @@ const SpotDetailScreen = ({ navigation }) => {
             ...initialCoordinates,
           }}
         >
-          <Polyline coordinates={spot.locations.map((loc) => loc.coords)} />
+          <Marker
+            coordinate={{
+              latitude: spot.location.coords.latitude,
+              longitude: spot.location.coords.longitude,
+            }}
+          />
         </MapView>
 
         <Card.Title title={spot.title} />
         <Card.Content>
           <Title>{spot.name}</Title>
-          <Paragraph>Paragraph Content</Paragraph>
+          <Paragraph>{spot.description}</Paragraph>
           <Card.Actions>
             <Button mode="contained" icon="camera">
               Share
             </Button>
-            <Button>Delete</Button>
+            <Button onPress={() => deleteSpot(_id)}>Delete</Button>
           </Card.Actions>
         </Card.Content>
       </Card>

@@ -11,9 +11,6 @@ export default () => {
   } = useContext(LocationContext);
 
   const saveSpot = async () => {
-    console.log(name);
-    console.log(description);
-    console.log(location);
     await createSpot(name, description, location);
     clearSpot();
     navigate("SpotList");

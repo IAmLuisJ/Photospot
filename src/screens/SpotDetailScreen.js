@@ -13,22 +13,23 @@ const SpotDetailScreen = ({ navigation }) => {
   return (
     <ScrollView contentContainerStyle={{ paddingTop: 50 }}>
       <Card>
-        <MapView
-          style={styles.map}
-          initialRegion={{
-            longitudeDelta: 0.01,
-            latitudeDelta: 0.01,
-            ...initialCoordinates,
-          }}
-        >
-          <Marker
-            coordinate={{
-              latitude: spot.location.coords.latitude,
-              longitude: spot.location.coords.longitude,
+        {spot ? (
+          <MapView
+            style={styles.map}
+            initialRegion={{
+              longitudeDelta: 0.01,
+              latitudeDelta: 0.01,
+              ...initialCoordinates,
             }}
-          />
-        </MapView>
-
+          >
+            <Marker
+              coordinate={{
+                latitude: spot.location.coords.latitude,
+                longitude: spot.location.coords.longitude,
+              }}
+            />
+          </MapView>
+        ) : null}
         <Card.Title title={spot.title} />
         <Card.Content>
           <Title>{spot.name}</Title>

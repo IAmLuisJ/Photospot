@@ -58,7 +58,6 @@ const signIn = (dispatch) => {
       const response = await spotServer.post("/signin", { email, password });
       await AsyncStorage.setItem("userToken", response.data.token);
       dispatch({ type: "SIGN_ON", payload: response.data.token });
-      console.log("sign in success");
       navigate("mainFlow");
     } catch (err) {
       console.log(err);

@@ -37,7 +37,14 @@ const SpotDetailScreen = ({ navigation }) => {
             <Button mode="contained" icon="camera">
               Share
             </Button>
-            <Button onPress={() => deleteSpot(_id)}>Delete</Button>
+            <Button
+              onPress={() => {
+                navigation.navigate("SpotList");
+                deleteSpot(_id);
+              }}
+            >
+              Delete
+            </Button>
           </Card.Actions>
         </Card.Content>
       </Card>

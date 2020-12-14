@@ -1,13 +1,10 @@
 import createDataContext from "./createDataContext";
 import spotServer from "../api/spotServer";
-import { navigate } from "../components/navigationRef";
 
 const spotReducer = (state, action) => {
   switch (action.type) {
     case "FETCH_SPOTS":
       return action.payload;
-    case "DELETE_SPOT":
-      return state;
     default:
       return state;
   }
@@ -26,22 +23,19 @@ const createSpot = (dispatch) => {
 const fetchSpots = (dispatch) => {
   return async () => {
     const response = await spotServer.get("/spots");
-    dispatch({ type: "FETCH_SPOT", payload: response.data });
+    dispatch({ type: "FETCH_SPOTS", payload: response.data });
   };
 };
 
 const deleteSpot = (dispatch) => {
   return async (_id) => {
     try {
-      console.log(_id);
       const response = await spotServer.delete("/spots", {
-        _id: _id,
+        data: { _id },
       });
-      console.log(response);
       dispatch({ type: "DELETE_SPOT" });
-      navigate("mainFlow");
     } catch (e) {
-      console.log(err);
+      console.log(e);
     }
   };
 };

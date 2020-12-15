@@ -1,5 +1,5 @@
 import React, { useContext } from "react";
-import { StyleSheet, ScrollView } from "react-native";
+import { StyleSheet, ScrollView, Share } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import { Card, Title, Paragraph, Button } from "react-native-paper";
 import { Context as SpotContext } from "../context/SpotContext";
@@ -35,7 +35,16 @@ const SpotDetailScreen = ({ navigation }) => {
           <Title>{spot.name}</Title>
           <Paragraph>{spot.description}</Paragraph>
           <Card.Actions>
-            <Button mode="contained" icon="camera">
+            <Button
+              mode="contained"
+              icon="camera"
+              onPress={() => {
+                Share.share({
+                  message: initialCoordinates,
+                  url: "www.google.com",
+                });
+              }}
+            >
               Share
             </Button>
             <Button

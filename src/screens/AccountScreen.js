@@ -11,6 +11,7 @@ const AccountScreen = ({ navigation }) => {
       <Button mode="contained" onPress={signOut} style={styles.buttonStyle}>
         Sign out
       </Button>
+      <Button>Delete Account</Button>
     </View>
   );
 };

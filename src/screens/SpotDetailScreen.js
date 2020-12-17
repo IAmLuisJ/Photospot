@@ -12,7 +12,7 @@ const SpotDetailScreen = ({ navigation }) => {
   const initialCoordinates = spot.location.coords;
 
   return (
-    <ScrollView contentContainerStyle={{ paddingTop: 50 }}>
+    <ScrollView contentContainerStyle={{ paddingTop: 45 }}>
       <Card>
         {valid ? (
           <MapView

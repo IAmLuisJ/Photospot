@@ -1,4 +1,4 @@
-import React, { useContext } from "react";
+import React, { useContext, useState } from "react";
 import { StyleSheet, ScrollView, Share } from "react-native";
 import MapView, { Marker } from "react-native-maps";
 import { Card, Title, Paragraph, Button } from "react-native-paper";
@@ -6,6 +6,7 @@ import { Context as SpotContext } from "../context/SpotContext";
 
 const SpotDetailScreen = ({ navigation }) => {
   const { state, deleteSpot } = useContext(SpotContext);
+  const [valid, setValid] = useState(true);
   const _id = navigation.getParam("_id");
   const spot = state.find((t) => t._id === _id);
   const initialCoordinates = spot.location.coords;
@@ -13,7 +14,7 @@ const SpotDetailScreen = ({ navigation }) => {
   return (
     <ScrollView contentContainerStyle={{ paddingTop: 50 }}>
       <Card>
-        {spot ? (
+        {valid ? (
           <MapView
             style={styles.map}
             initialRegion={{
@@ -41,7 +42,7 @@ const SpotDetailScreen = ({ navigation }) => {
               onPress={() => {
                 Share.share({
                   message: initialCoordinates,
-                  url: "www.google.com",
+                  url: "www.google.com/maps",
                 });
               }}
             >
@@ -51,6 +52,7 @@ const SpotDetailScreen = ({ navigation }) => {
               onPress={() => {
                 navigation.navigate("SpotList");
                 deleteSpot(_id);
+                setValid(false);
               }}
             >
               Delete

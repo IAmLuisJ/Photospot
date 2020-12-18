@@ -36,9 +36,10 @@ const SpotDetailScreen = ({ navigation }) => {
           <Title>{spot.name}</Title>
           <Paragraph>{spot.description}</Paragraph>
           <Card.Actions>
+            <Button mode="contained" icon="camera">
+              Add Photo
+            </Button>
             <Button
-              mode="contained"
-              icon="camera"
               onPress={() => {
                 Share.share({
                   message: initialCoordinates,

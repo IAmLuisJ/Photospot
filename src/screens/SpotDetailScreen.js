@@ -42,7 +42,7 @@ const SpotDetailScreen = ({ navigation }) => {
             <Button
               onPress={() => {
                 Share.share({
-                  message: initialCoordinates,
+                  message: "test",
                   url: "www.google.com/maps",
                 });
               }}

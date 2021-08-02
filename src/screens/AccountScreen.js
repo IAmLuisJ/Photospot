@@ -22,7 +22,7 @@ const styles = StyleSheet.create({
     margin: 15,
   },
   buttonStyle: {
-    margin: 20,
+    margin: 21,
   },
   container: {
     flex: 1,

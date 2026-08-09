@@ -91,18 +91,63 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    environment: "node",
-    include: ["app/**/*.test.ts", "tests/**/*.test.ts"],
-    globals: false,
+    // tests/db/ doesn't exist yet (added in a later task); an empty "db"
+    // project shouldn't fail the run. This must live on the root config —
+    // Vitest doesn't honor passWithNoTests set per-project.
+    passWithNoTests: true,
+    projects: [
+      {
+        resolve: { tsconfigPaths: true },
+        test: {
+          name: "unit",
+          environment: "node",
+          include: ["app/**/*.test.{ts,tsx}"],
+          globals: false,
+        },
+      },
+      {
+        resolve: { tsconfigPaths: true },
+        test: {
+          name: "db",
+          environment: "node",
+          include: ["tests/db/**/*.test.ts"],
+          globals: false,
+          // These tests all hit one shared Postgres instance (e.g. task 15's
+          // backfill rewrites spots.score across every row) so they must not
+          // run as concurrent files.
+          fileParallelism: false,
+        },
+      },
+    ],
   },
 });
 ```
+
+Three things here are deliberate and were added during Task 1's code review:
+
+- **`resolve: { tsconfigPaths: true }` on each project.** Vitest loads `vitest.config.ts`
+  *instead of* `vite.config.ts`, so the `~/*` alias from `tsconfig.json` does not resolve in tests
+  unless this config asks for it. Without it, `tsc` and `npm run build` stay green while `npm test`
+  fails at import — and tasks 12–14 import `~/lib/supabase.server`.
+- **Separate `unit` and `db` projects.** Otherwise `npm test` requires a running Supabase stack from
+  task 6 onward, which defeats the purpose of a pure `app/domain/` layer.
+- **`.tsx` in the unit glob.** Plan 2 adds React components; `*.test.ts` alone would silently
+  *not collect* a `.tsx` test rather than fail.
 
 Add to `package.json` `"scripts"`:
 
 ```json
 "test": "vitest run",
+"test:unit": "vitest run --project unit",
+"test:db": "vitest run --project db",
+"test:coverage": "vitest run --coverage",
 "test:watch": "vitest"
+```
+
+Add to `package.json` alongside `"scripts"`:
+
+```json
+"engines": { "node": ">=20" }
 ```
 
 - [ ] **Step 5: Write the failing test**
@@ -146,22 +191,26 @@ Create `app/domain/scoring/weights.ts`:
  * scripts/backfill-scores.ts to recompute every stored spot score.
  */
 export interface ScoreWeights {
-  shootTypeUpvote: number;
-  shootAgainYes: number;
-  shootAgainNo: number;
-  comment: number;
-  scoutingPhoto: number;
-  sessionPhoto: number;
+  readonly shootTypeUpvote: number;
+  readonly shootAgainYes: number;
+  readonly shootAgainNo: number;
+  readonly comment: number;
+  readonly scoutingPhoto: number;
+  readonly sessionPhoto: number;
 }
 
-export const DEFAULT_WEIGHTS: ScoreWeights = {
+// Frozen because `export const` freezes the binding, not the object. This
+// object is the default argument of both computeScore (task 2) and
+// backfillScores (task 15), and task 15 writes the result to the database —
+// one stray mutation would silently re-weight every score after it.
+export const DEFAULT_WEIGHTS: ScoreWeights = Object.freeze({
   shootTypeUpvote: 1.0,
   shootAgainYes: 2.0,
   shootAgainNo: -1.5,
   comment: 0.5,
   scoutingPhoto: 1.0,
   sessionPhoto: 1.5,
-};
+});
 ```
 
 - [ ] **Step 8: Run the test to verify it passes**
@@ -2871,7 +2920,9 @@ Local mail (magic links) is at http://127.0.0.1:54324.
 | Command | Purpose |
 | --- | --- |
 | `npm run dev` | Dev server |
-| `npm test` | Domain and database tests |
+| `npm test` | Everything |
+| `npm run test:unit` | Pure domain tests — fast, no Docker needed |
+| `npm run test:db` | Database and RLS tests — requires `npx supabase start` |
 | `npm run typecheck` | TypeScript |
 | `npx supabase db reset` | Replay all migrations |
 | `npm run backfill:scores` | Recompute scores after changing weights |

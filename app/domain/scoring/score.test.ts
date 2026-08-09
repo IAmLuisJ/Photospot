@@ -45,10 +45,12 @@ describe("computeScore", () => {
   });
 
   it("rounds to three decimals to keep stored values stable", () => {
+    // 0.1236 rounds UP to 0.124. A truncating implementation would give 0.123,
+    // so this value distinguishes rounding from truncation; 0.1234567 would not.
     const result = computeScore(counters({ commentCount: 1 }), {
       ...DEFAULT_WEIGHTS,
-      comment: 0.1234567,
+      comment: 0.1236,
     });
-    expect(result).toBe(0.123);
+    expect(result).toBe(0.124);
   });
 });

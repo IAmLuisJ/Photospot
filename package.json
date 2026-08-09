@@ -12,7 +12,7 @@
     "typecheck": "react-router typegen && tsc",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
-    "test:db": "vitest run --project db",
+    "test:db": "vitest run --project db --passWithNoTests",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest"
   },

@@ -2,10 +2,11 @@ import { defineConfig } from "vitest/config";
 
 export default defineConfig({
   test: {
-    // tests/db/ doesn't exist yet (added in a later task); an empty "db"
-    // project shouldn't fail the run. This must live on the root config —
-    // Vitest doesn't honor passWithNoTests set per-project.
-    passWithNoTests: true,
+    // Deliberately no passWithNoTests here. On the root config it applies to
+    // the whole run, so a broken glob would exit 0 with nothing executed.
+    // `tests/db/` doesn't exist until task 6, and Vitest ignores the flag when
+    // set per-project, so the `test:db` script passes it on the command line
+    // instead — per-invocation, and it can't leak into `npm test`.
     projects: [
       {
         resolve: { tsconfigPaths: true },

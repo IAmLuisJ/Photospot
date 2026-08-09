@@ -266,8 +266,8 @@ describe("computeScore", () => {
         sessionPhotoCount: 1,
       }),
     );
-    // 3(1.0) + 2(2.0) + 4(0.5) + 2(1.0) + 1(1.5) = 13.5
-    expect(result).toBe(13.5);
+    // 3(1.0) + 2(2.0) + 4(0.5) + 2(1.0) + 1(1.5) = 12.5
+    expect(result).toBe(12.5);
   });
 
   it("subtracts shoot-again no votes", () => {

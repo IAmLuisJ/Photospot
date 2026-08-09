@@ -706,11 +706,16 @@ describe("snapBoundsToGrid", () => {
 
   it("gives the same box for a small pan, so the query can be reused", () => {
     const step = gridStepForZoom(12);
+    // step/100, not step/20: GR_VIEW's west edge happens to sit ~96.5% into its
+    // zoom-12 cell and its north edge ~3.7% below the next boundary, so a 5%
+    // nudge crosses two grid lines at once. That is a property of these
+    // coordinates, not of snapBoundsToGrid, which is idempotent everywhere.
+    const nudge = step / 100;
     const nudged: Bounds = {
-      west: GR_VIEW.west + step / 20,
-      south: GR_VIEW.south + step / 20,
-      east: GR_VIEW.east + step / 20,
-      north: GR_VIEW.north + step / 20,
+      west: GR_VIEW.west + nudge,
+      south: GR_VIEW.south + nudge,
+      east: GR_VIEW.east + nudge,
+      north: GR_VIEW.north + nudge,
     };
     expect(snapBoundsToGrid(nudged, 12)).toEqual(snapBoundsToGrid(GR_VIEW, 12));
   });
@@ -726,11 +731,26 @@ describe("snapBoundsToGrid", () => {
     expect(snapBoundsToGrid(moved, 12)).not.toEqual(snapBoundsToGrid(GR_VIEW, 12));
   });
 
+  // At every INTEGER zoom, 90 / step is exactly 2^(z+1), so ±90 are always grid
+  // lines and the clamp never fires — this case would pass with clampLat
+  // deleted. It is kept because it documents the invariant; the test below is
+  // the one that actually exercises the clamp.
   it("clamps latitude to the valid range", () => {
     const polar: Bounds = { west: -10, south: -89.9, east: 10, north: 89.9 };
     const snapped = snapBoundsToGrid(polar, 3);
     expect(snapped.south).toBeGreaterThanOrEqual(-90);
     expect(snapped.north).toBeLessThanOrEqual(90);
+  });
+
+  // Map libraries send fractional zoom during pinch and smooth zoom, and `zoom`
+  // is typed `number`, so this is reachable. At z=0.5 the raw ceil lands at
+  // 95.46 — an invalid latitude PostGIS would reject — so the clamp is
+  // load-bearing here even though it is inert at every integer zoom.
+  it("clamps at fractional zoom, where the grid does not align to the poles", () => {
+    const polar: Bounds = { west: -10, south: -89.9, east: 10, north: 89.9 };
+    const snapped = snapBoundsToGrid(polar, 0.5);
+    expect(snapped.north).toBe(90);
+    expect(snapped.south).toBe(-90);
   });
 });
 
@@ -801,12 +821,12 @@ export function boundsContain(bounds: Bounds, point: LatLng): boolean {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run app/domain/geo/bounds.test.ts`
-Expected: PASS — 8 tests
+Expected: PASS — 10 tests
 
 - [ ] **Step 5: Run the whole domain suite**
 
 Run: `npx vitest run app/domain`
-Expected: PASS — 4 files, 30 tests, completing in under a second with no database
+Expected: PASS — 5 files, 35 tests, completing in under a second with no database
 
 - [ ] **Step 6: Commit**
 

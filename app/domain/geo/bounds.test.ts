@@ -68,11 +68,26 @@ describe("snapBoundsToGrid", () => {
     expect(snapBoundsToGrid(moved, 12)).not.toEqual(snapBoundsToGrid(GR_VIEW, 12));
   });
 
+  // At every INTEGER zoom, 90 / step is exactly 2^(z+1), so ±90 are always grid
+  // lines and the clamp never fires — this case would pass with clampLat
+  // deleted. It is kept because it documents the invariant; the test below is
+  // the one that actually exercises the clamp.
   it("clamps latitude to the valid range", () => {
     const polar: Bounds = { west: -10, south: -89.9, east: 10, north: 89.9 };
     const snapped = snapBoundsToGrid(polar, 3);
     expect(snapped.south).toBeGreaterThanOrEqual(-90);
     expect(snapped.north).toBeLessThanOrEqual(90);
+  });
+
+  // Map libraries send fractional zoom during pinch and smooth zoom, and `zoom`
+  // is typed `number`, so this is reachable. At z=0.5 the raw ceil lands at
+  // 95.46 — an invalid latitude PostGIS would reject — so the clamp is
+  // load-bearing here even though it is inert at every integer zoom.
+  it("clamps at fractional zoom, where the grid does not align to the poles", () => {
+    const polar: Bounds = { west: -10, south: -89.9, east: 10, north: 89.9 };
+    const snapped = snapBoundsToGrid(polar, 0.5);
+    expect(snapped.north).toBe(90);
+    expect(snapped.south).toBe(-90);
   });
 });
 

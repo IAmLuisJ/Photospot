@@ -993,12 +993,15 @@ export interface TestUser {
   client: SupabaseClient;
 }
 
-let counter = 0;
-
 /** Creates a confirmed user and returns a client authenticated as them. */
 export async function createTestUser(displayName = "Test User"): Promise<TestUser> {
   const admin = serviceClient();
-  const email = `test-${Date.now()}-${counter++}@example.com`;
+  // randomUUID rather than a timestamp and module counter: the counter resets
+  // per test file, so cross-file uniqueness would rest on Date.now() advancing,
+  // which only holds because `fileParallelism: false` serialises files. That
+  // makes a correctness property here depend on a performance setting in
+  // vitest.config.ts. This is unconditional.
+  const email = `test-${crypto.randomUUID()}@example.com`;
   const password = "test-password-12345";
 
   const { data, error } = await admin.auth.admin.createUser({
@@ -1108,7 +1111,13 @@ Expected: FAIL — relation `shoot_types` does not exist
 Create `supabase/migrations/20260809000001_profiles_and_shoot_types.sql`:
 
 ```sql
-create extension if not exists postgis;
+-- Into `extensions`, where Supabase keeps pgcrypto and uuid-ossp, not `public`.
+-- This is effectively a one-way door: once task 8 creates geography columns,
+-- relocating postgis means `drop extension postgis cascade`, which drops them.
+-- Resolution is covered in both directions — the `postgres` role's search_path
+-- is "$user", public, extensions, and PostgREST runs with
+-- PGRST_DB_EXTRA_SEARCH_PATH=public,extensions.
+create extension if not exists postgis with schema extensions;
 
 create table public.profiles (
   id uuid primary key references auth.users (id) on delete cascade,
@@ -1120,6 +1129,20 @@ create table public.profiles (
   instagram text,
   created_at timestamptz not null default now()
 );
+
+-- Tables created by migrations are owned by `postgres`; PostgREST roles get
+-- no privileges on them by default (only objects owned by `supabase_admin`
+-- pick up such a default ACL). `service_role` has BYPASSRLS but is not a
+-- superuser, so it still needs an explicit grant to be readable/writable
+-- here. `anon`/`authenticated` grants are deliberately withheld until task 11
+-- adds row-level security — granting them now would leave these tables fully
+-- open to the public with no RLS in place.
+grant select, insert, update, delete on public.profiles to service_role;
+
+-- Enabled here rather than in task 11 so the table fails CLOSED for the four
+-- tasks in between. Without it, safety rests entirely on the absence of grants,
+-- and adding a grant early would silently expose the table.
+alter table public.profiles enable row level security;
 
 create table public.shoot_types (
   id serial primary key,
@@ -1139,12 +1162,25 @@ insert into public.shoot_types (slug, label, sort_order) values
   ('branding',        'Branding',        80),
   ('pets',            'Pets',            90);
 
+grant select on public.shoot_types to service_role;
+alter table public.shoot_types enable row level security;
+
 -- A profile row must exist for every auth user; the app never creates one.
+--
+-- search_path is '' rather than 'public': pg_temp is searched ahead of public
+-- for relation names, which is the classic way to shadow a table inside a
+-- security definer function. Every reference below is schema-qualified, so the
+-- stricter pin costs nothing.
+--
+-- The final literal keeps the coalesce total. email is nullable on auth.users,
+-- and split_part(null, ...) is null — so a provider that withholds email (phone
+-- auth, some OAuth) would otherwise violate display_name NOT NULL and break the
+-- signup itself. Unreachable today; cheap to make impossible.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
 security definer
-set search_path = public
+set search_path = ''
 as $$
 begin
   insert into public.profiles (id, display_name)
@@ -1153,7 +1189,8 @@ begin
     coalesce(
       nullif(new.raw_user_meta_data ->> 'display_name', ''),
       nullif(new.raw_user_meta_data ->> 'full_name', ''),
-      split_part(new.email, '@', 1)
+      nullif(split_part(coalesce(new.email, ''), '@', 1), ''),
+      'Photospots member'
     )
   );
   return new;
@@ -2200,6 +2237,110 @@ describe("base privileges", () => {
     expect(error).toBeNull();
     expect((data ?? []).length).toBe(9);
   });
+
+  // Distinguishes an RLS denial from a missing grant. Both surface as a
+  // non-null error, so without checking the code a grant regression would keep
+  // these tests green while breaking the app.
+  it("denies an anonymous write with an RLS violation, not a missing grant", async () => {
+    const { error } = await anonClient().from("comments").insert({
+      spot_id: spotId,
+      profile_id: author.id,
+      body: "nope",
+    });
+    expect(error?.code).toBe("42501");
+  });
+});
+
+describe("studio claiming", () => {
+  let studioSpotId: string;
+
+  beforeAll(async () => {
+    const { data } = await serviceClient()
+      .from("spots")
+      .insert({
+        kind: "studio",
+        name: "Claimable Studio",
+        slug: `claimable-${Date.now()}`,
+        location: "POINT(-85.67 42.96)",
+        created_by: author.id,
+      })
+      .select("id")
+      .single();
+    studioSpotId = data!.id;
+
+    await serviceClient().from("studio_details").insert({
+      spot_id: studioSpotId,
+      contact_email: "owner@studio.example",
+    });
+  });
+
+  afterAll(async () => {
+    await serviceClient().from("spots").delete().eq("id", studioSpotId);
+  });
+
+  // The hole this closes: with a `for all` policy, only WITH CHECK applies on
+  // INSERT, so naming yourself in claimed_by was enough to claim any studio.
+  it("does not let a stranger claim a studio by writing claimed_by", async () => {
+    await stranger.client
+      .from("studio_details")
+      .update({ claimed_by: stranger.id })
+      .eq("spot_id", studioSpotId);
+
+    const { data } = await serviceClient()
+      .from("studio_details")
+      .select("claimed_by")
+      .eq("spot_id", studioSpotId)
+      .single();
+
+    expect(data?.claimed_by).toBeNull();
+  });
+
+  it("does not let a stranger claim via the RPC without a matching email", async () => {
+    const { error } = await stranger.client.rpc("claim_studio", { p_spot_id: studioSpotId });
+    expect(error).not.toBeNull();
+
+    const { data } = await serviceClient()
+      .from("studio_details")
+      .select("claimed_by")
+      .eq("spot_id", studioSpotId)
+      .single();
+    expect(data?.claimed_by).toBeNull();
+  });
+
+  it("lets the listing creator edit contact details without claiming", async () => {
+    const { error } = await author.client
+      .from("studio_details")
+      .update({ hourly_rate_cents: 12000 })
+      .eq("spot_id", studioSpotId);
+    expect(error).toBeNull();
+  });
+});
+
+describe("moderation", () => {
+  it("does not let an author un-remove their own comment", async () => {
+    const { data: comment } = await serviceClient()
+      .from("comments")
+      .insert({ spot_id: spotId, profile_id: author.id, body: "Needs moderating." })
+      .select("id")
+      .single();
+
+    // Admin removes it.
+    await serviceClient().from("comments").update({ status: "removed" }).eq("id", comment!.id);
+
+    // Author tries to put it back.
+    await author.client
+      .from("comments")
+      .update({ status: "published" })
+      .eq("id", comment!.id);
+
+    const { data } = await serviceClient()
+      .from("comments")
+      .select("status")
+      .eq("id", comment!.id)
+      .single();
+
+    expect(data?.status).toBe("removed");
+  });
 });
 
 describe("reports", () => {
@@ -2284,8 +2425,15 @@ grant insert, delete         on public.signals            to authenticated;
 grant insert, update         on public.photos             to authenticated;
 grant insert, delete         on public.spot_gallery_links to authenticated;
 grant insert, update         on public.comments           to authenticated;
-grant insert, update, delete on public.studio_details     to authenticated;
 grant insert, select, update on public.reports            to authenticated;
+
+-- studio_details: INSERT is table-wide (the policy constrains it to
+-- claimed_by is null), but UPDATE is column-scoped so claimed_by/claimed_at
+-- cannot be written through PostgREST at all — only claim_studio() sets them.
+-- No DELETE: deleting and re-inserting was a claim-laundering path.
+grant insert on public.studio_details to authenticated;
+grant update (hourly_rate_cents, booking_url, contact_email)
+  on public.studio_details to authenticated;
 
 -- Reference data and profiles are public reads.
 create policy shoot_types_read on public.shoot_types for select using (true);
@@ -2309,18 +2457,30 @@ create policy spots_read on public.spots for select
 create policy spots_insert on public.spots for insert
   with check (created_by = auth.uid());
 
+-- The status clauses prevent an author un-removing their own spot after an
+-- admin removes it; see comments_update for the full reasoning.
 create policy spots_update on public.spots for update
-  using (created_by = auth.uid() or owner_profile_id = auth.uid() or public.is_admin())
-  with check (created_by = auth.uid() or owner_profile_id = auth.uid() or public.is_admin());
+  using (
+    public.is_admin()
+    or ((created_by = auth.uid() or owner_profile_id = auth.uid()) and status = 'published')
+  )
+  with check (
+    public.is_admin()
+    or ((created_by = auth.uid() or owner_profile_id = auth.uid()) and status = 'published')
+  );
 
 -- Derived columns (score, hot_score, the counters) are maintained by triggers
 -- and by the command layer running with elevated rights. Users may never set
 -- them directly, so UPDATE is granted per column and never table-wide. No
 -- REVOKE is needed first: the default ACL grants authenticated no UPDATE at
 -- all, so there is nothing to take away.
+-- `status` and `owner_profile_id` are deliberately absent. status is moderation
+-- state, guarded by the policy above and settable only by an admin.
+-- owner_profile_id is set by claim_studio(), per spec §9.3 — leaving it here
+-- would let anyone assign themselves ownership of any listing directly.
 grant update (
-  name, slug, description, kind, location, locality, region, status,
-  owner_profile_id, cost_type, cost_notes, permit_url, hours_notes,
+  name, slug, description, kind, location, locality, region,
+  cost_type, cost_notes, permit_url, hours_notes,
   best_light, best_seasons, walk_minutes, parking_notes, terrain,
   accessibility, max_group_size, dog_friendly, updated_at
 ) on public.spots to authenticated;
@@ -2347,9 +2507,10 @@ create policy photos_read on public.photos for select
   using (status = 'published' or profile_id = auth.uid() or public.is_admin());
 create policy photos_insert on public.photos for insert
   with check (profile_id = auth.uid());
+-- Same moderation-reversal guard as comments_update below.
 create policy photos_update on public.photos for update
-  using (profile_id = auth.uid() or public.is_admin())
-  with check (profile_id = auth.uid() or public.is_admin());
+  using (public.is_admin() or (profile_id = auth.uid() and status = 'published'))
+  with check (public.is_admin() or (profile_id = auth.uid() and status = 'published'));
 
 create policy gallery_links_read on public.spot_gallery_links for select using (true);
 create policy gallery_links_insert on public.spot_gallery_links for insert
@@ -2361,14 +2522,95 @@ create policy comments_read on public.comments for select
   using (status = 'published' or profile_id = auth.uid() or public.is_admin());
 create policy comments_insert on public.comments for insert
   with check (profile_id = auth.uid());
+-- The `status = 'published'` clauses are what stop an author reversing
+-- moderation. Without them the author keeps UPDATE on `status`, so an admin
+-- removes abusive content and its author sets it straight back to published.
+-- USING sees the old row and WITH CHECK the new one, so requiring published in
+-- both makes removed content untouchable by its author in either direction.
+-- Column-scoping cannot solve this, because admins are `authenticated` too.
 create policy comments_update on public.comments for update
-  using (profile_id = auth.uid() or public.is_admin())
-  with check (profile_id = auth.uid() or public.is_admin());
+  using (public.is_admin() or (profile_id = auth.uid() and status = 'published'))
+  with check (public.is_admin() or (profile_id = auth.uid() and status = 'published'));
 
+-- Studio listings. A `for all` policy would be wrong in BOTH directions: on
+-- INSERT only WITH CHECK applies, so `claimed_by = auth.uid()` would (a) let any
+-- authenticated user claim any studio just by inserting a row naming themselves
+-- — first-come-first-served on a spot_id primary key, scriptable across every
+-- studio in the database, bypassing the §9.3 email verification entirely — and
+-- (b) block the legitimate flow, where someone submits a studio with contact
+-- details and no claim at all.
+--
+-- Claiming is a verified command, not a row write. `claimed_by` is therefore not
+-- writable through PostgREST by anyone: it is set only by claim_studio() below,
+-- which runs security definer after checking the verified email. Same reasoning
+-- the plan already applies to spots.score.
 create policy studio_details_read on public.studio_details for select using (true);
-create policy studio_details_write on public.studio_details for all
+
+create policy studio_details_insert on public.studio_details for insert
+  with check (
+    claimed_by is null
+    and exists (
+      select 1 from public.spots s
+      where s.id = spot_id and s.kind = 'studio'
+        and (s.created_by = auth.uid() or public.is_admin())
+    )
+  );
+
+create policy studio_details_update on public.studio_details for update
   using (claimed_by = auth.uid() or public.is_admin())
   with check (claimed_by = auth.uid() or public.is_admin());
+
+-- No DELETE policy. Deleting was previously reachable by the claimant, which
+-- allowed claim laundering: delete the row, then re-insert it claimed by
+-- someone else. Studio details die with their spot via the cascade.
+
+-- The claim itself. Spec §9.3: verification is against the listing's
+-- contact_email, so the caller must have that address confirmed on their own
+-- auth account. Runs security definer because claimed_by/owner_profile_id are
+-- deliberately not writable by `authenticated`.
+create or replace function public.claim_studio(p_spot_id uuid)
+returns void
+language plpgsql
+security definer
+set search_path = ''
+as $$
+declare
+  v_contact text;
+  v_verified boolean;
+begin
+  if auth.uid() is null then
+    raise exception 'must be signed in to claim a listing';
+  end if;
+
+  select d.contact_email into v_contact
+  from public.studio_details d
+  where d.spot_id = p_spot_id and d.claimed_by is null
+  for update;
+
+  if v_contact is null then
+    raise exception 'listing is not claimable';
+  end if;
+
+  select (u.email = v_contact and u.email_confirmed_at is not null)
+    into v_verified
+  from auth.users u
+  where u.id = auth.uid();
+
+  if not coalesce(v_verified, false) then
+    raise exception 'claim requires a confirmed email matching the listing contact';
+  end if;
+
+  update public.studio_details
+     set claimed_by = auth.uid(), claimed_at = now()
+   where spot_id = p_spot_id;
+
+  update public.spots
+     set owner_profile_id = auth.uid()
+   where id = p_spot_id;
+end;
+$$;
+
+grant execute on function public.claim_studio(uuid) to authenticated;
 
 -- Reports: anyone signed in may file one; only admins may read the queue.
 create policy reports_insert on public.reports for insert
@@ -2390,7 +2632,7 @@ Expected: success.
 - [ ] **Step 5: Run the test to verify it passes**
 
 Run: `npx vitest run tests/db/rls.test.ts`
-Expected: PASS — 16 tests
+Expected: PASS — 21 tests
 
 - [ ] **Step 6: Run the full suite**
 

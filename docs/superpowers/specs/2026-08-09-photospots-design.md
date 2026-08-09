@@ -357,9 +357,21 @@ Optimistic UI with rollback on failure. A unique-constraint violation from a dup
 Email verification against the listing's `contact_email`, which sets `claimed_by` and
 `owner_profile_id`.
 
+**Claiming is a command, not a row write.** Neither `claimed_by` nor `owner_profile_id` is writable
+through the API by `authenticated`; a `security definer` `claim_studio()` function sets both after
+confirming the caller's own verified email matches the listing contact. Allowing the columns to be
+written directly would let any signed-in user claim any unclaimed studio — first come, first served,
+across every listing at once — while also blocking the legitimate case of submitting a studio with
+contact details and no claim.
+
 ### 9.4 Reports and takedown
 
 Both use the `reports` table and the admin queue. Resolution actions are hide and remove.
+
+**Moderation must not be reversible by the author.** `status` is admin-only: it is absent from the
+column grants, and the update policies additionally require the row to be `published` for
+non-admins, so an author can neither edit nor un-remove content after it has been removed.
+Column-scoping alone is insufficient here, because admins are `authenticated` too.
 
 ## 10. Failure handling
 

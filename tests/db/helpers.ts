@@ -32,12 +32,15 @@ export interface TestUser {
   client: SupabaseClient;
 }
 
-let counter = 0;
-
 /** Creates a confirmed user and returns a client authenticated as them. */
 export async function createTestUser(displayName = "Test User"): Promise<TestUser> {
   const admin = serviceClient();
-  const email = `test-${Date.now()}-${counter++}@example.com`;
+  // randomUUID rather than a timestamp and module counter: the counter resets
+  // per test file, so cross-file uniqueness would rest on Date.now() advancing,
+  // which only holds because `fileParallelism: false` serialises files. That
+  // makes a correctness property here depend on a performance setting in
+  // vitest.config.ts. This is unconditional.
+  const email = `test-${crypto.randomUUID()}@example.com`;
   const password = "test-password-12345";
 
   const { data, error } = await admin.auth.admin.createUser({

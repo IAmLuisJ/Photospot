@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   haversineMeters,
-  isPotentialDuplicate,
+  isWithinRadius,
   DUPLICATE_RADIUS_METERS,
   type LatLng,
 } from "./distance";
@@ -34,17 +34,17 @@ describe("haversineMeters", () => {
   });
 });
 
-describe("isPotentialDuplicate", () => {
+describe("isWithinRadius", () => {
   const base: LatLng = { lat: 42.9214, lng: -85.7267 };
   // ~100 m north of base: 0.0009 degrees of latitude.
   const near: LatLng = { lat: 42.9223, lng: -85.7267 };
 
   it("flags two pins within the radius", () => {
-    expect(isPotentialDuplicate(base, near)).toBe(true);
+    expect(isWithinRadius(base, near)).toBe(true);
   });
 
   it("does not flag pins beyond the radius", () => {
-    expect(isPotentialDuplicate(base, JOHN_BALL_PARK)).toBe(false);
+    expect(isWithinRadius(base, JOHN_BALL_PARK)).toBe(false);
   });
 
   it("uses a 200 metre default radius", () => {
@@ -52,6 +52,6 @@ describe("isPotentialDuplicate", () => {
   });
 
   it("honours an overridden radius", () => {
-    expect(isPotentialDuplicate(base, near, 50)).toBe(false);
+    expect(isWithinRadius(base, near, 50)).toBe(false);
   });
 });

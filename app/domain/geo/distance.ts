@@ -27,7 +27,14 @@ export function haversineMeters(a: LatLng, b: LatLng): number {
   return 2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-export function isPotentialDuplicate(
+/**
+ * Proximity only. Deliberately NOT called isPotentialDuplicate: spec §9.1
+ * defines a duplicate as proximity AND matching kind, and this function has no
+ * kind to compare — an outdoor pin beside a studio is close but not a
+ * duplicate. The kind-aware check is the `spots_within_meters` RPC, which
+ * takes p_kind. Inclusive at the boundary, matching ST_DWithin.
+ */
+export function isWithinRadius(
   a: LatLng,
   b: LatLng,
   radiusMeters: number = DUPLICATE_RADIUS_METERS,

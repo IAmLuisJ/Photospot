@@ -524,7 +524,7 @@ Create `app/domain/geo/distance.test.ts`:
 import { describe, it, expect } from "vitest";
 import {
   haversineMeters,
-  isPotentialDuplicate,
+  isWithinRadius,
   DUPLICATE_RADIUS_METERS,
   type LatLng,
 } from "./distance";
@@ -557,17 +557,17 @@ describe("haversineMeters", () => {
   });
 });
 
-describe("isPotentialDuplicate", () => {
+describe("isWithinRadius", () => {
   const base: LatLng = { lat: 42.9214, lng: -85.7267 };
   // ~100 m north of base: 0.0009 degrees of latitude.
   const near: LatLng = { lat: 42.9223, lng: -85.7267 };
 
   it("flags two pins within the radius", () => {
-    expect(isPotentialDuplicate(base, near)).toBe(true);
+    expect(isWithinRadius(base, near)).toBe(true);
   });
 
   it("does not flag pins beyond the radius", () => {
-    expect(isPotentialDuplicate(base, JOHN_BALL_PARK)).toBe(false);
+    expect(isWithinRadius(base, JOHN_BALL_PARK)).toBe(false);
   });
 
   it("uses a 200 metre default radius", () => {
@@ -575,7 +575,7 @@ describe("isPotentialDuplicate", () => {
   });
 
   it("honours an overridden radius", () => {
-    expect(isPotentialDuplicate(base, near, 50)).toBe(false);
+    expect(isWithinRadius(base, near, 50)).toBe(false);
   });
 });
 ```
@@ -619,7 +619,14 @@ export function haversineMeters(a: LatLng, b: LatLng): number {
   return 2 * EARTH_RADIUS_METERS * Math.asin(Math.min(1, Math.sqrt(h)));
 }
 
-export function isPotentialDuplicate(
+/**
+ * Proximity only. Deliberately NOT called isPotentialDuplicate: spec §9.1
+ * defines a duplicate as proximity AND matching kind, and this function has no
+ * kind to compare — an outdoor pin beside a studio is close but not a
+ * duplicate. The kind-aware check is the `spots_within_meters` RPC, which
+ * takes p_kind. Inclusive at the boundary, matching ST_DWithin.
+ */
+export function isWithinRadius(
   a: LatLng,
   b: LatLng,
   radiusMeters: number = DUPLICATE_RADIUS_METERS,
@@ -1184,6 +1191,7 @@ describe("spots", () => {
       p_lng: -85.7267,
       p_lat: 42.9223,
       p_meters: 250,
+      p_kind: "outdoor",
     });
 
     expect(error).toBeNull();
@@ -1195,10 +1203,42 @@ describe("spots", () => {
       p_lng: -100.0,
       p_lat: 40.0,
       p_meters: 250,
+      p_kind: "outdoor",
     });
 
     expect(error).toBeNull();
     expect(data).toEqual([]);
+  });
+
+  // Spec §9.1: the duplicate check matches on proximity AND kind. Without the
+  // kind filter, dropping an outdoor pin beside a studio would offer the studio
+  // as a duplicate candidate.
+  it("does not offer a studio as a duplicate for an outdoor pin", async () => {
+    await serviceClient()
+      .from("spots")
+      .insert(newSpot({ name: "Nearby Studio", kind: "studio" }));
+
+    const { data, error } = await serviceClient().rpc("spots_within_meters", {
+      p_lng: -85.7267,
+      p_lat: 42.9223,
+      p_meters: 250,
+      p_kind: "outdoor",
+    });
+
+    expect(error).toBeNull();
+    expect((data as { name: string }[]).map((s) => s.name)).not.toContain("Nearby Studio");
+  });
+
+  it("finds a studio when searching for studios", async () => {
+    const { data, error } = await serviceClient().rpc("spots_within_meters", {
+      p_lng: -85.7267,
+      p_lat: 42.9223,
+      p_meters: 250,
+      p_kind: "studio",
+    });
+
+    expect(error).toBeNull();
+    expect((data as { name: string }[]).map((s) => s.name)).toContain("Nearby Studio");
   });
 });
 ```
@@ -1281,10 +1321,14 @@ create trigger spots_touch_updated_at
   for each row execute function public.touch_updated_at();
 
 -- Proximity lookup backing the duplicate check in the submission flow.
+-- Spec §9.1 defines a duplicate as proximity AND matching kind: an outdoor pin
+-- dropped beside a studio is not a duplicate of it, so p_kind is required
+-- rather than optional.
 create or replace function public.spots_within_meters(
   p_lng double precision,
   p_lat double precision,
-  p_meters double precision
+  p_meters double precision,
+  p_kind public.spot_kind
 )
 returns setof public.spots
 language sql
@@ -1293,6 +1337,7 @@ as $$
   select *
   from public.spots
   where status = 'published'
+    and kind = p_kind
     and st_dwithin(location, st_point(p_lng, p_lat)::geography, p_meters)
   order by st_distance(location, st_point(p_lng, p_lat)::geography)
 $$;
@@ -1309,7 +1354,7 @@ Expected: success.
 - [ ] **Step 5: Run the test to verify it passes**
 
 Run: `npx vitest run tests/db/schema-spots.test.ts`
-Expected: PASS — 7 tests
+Expected: PASS — 9 tests
 
 - [ ] **Step 6: Commit**
 

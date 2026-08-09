@@ -1,0 +1,12 @@
+node_modules/
+.env
+.env.*
+!.env.example
+build/
+dist/
+.react-router/
+.DS_Store
+*.log
+
+# Brainstorming session mockups (superpowers visual companion)
+.superpowers/

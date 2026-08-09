@@ -529,7 +529,7 @@ import {
   type LatLng,
 } from "./distance";
 
-// Two real Grand Rapids landmarks, roughly 1.5 km apart.
+// Two real Grand Rapids landmarks, roughly 5 km apart.
 const MILLENNIUM_PARK: LatLng = { lat: 42.9214, lng: -85.7267 };
 const JOHN_BALL_PARK: LatLng = { lat: 42.9631, lng: -85.7011 };
 

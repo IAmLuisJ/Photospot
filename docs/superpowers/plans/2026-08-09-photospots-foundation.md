@@ -6,7 +6,9 @@
 
 **Architecture:** Four layers, per spec §5. Routes are thin (loaders call queries, actions call commands). The `app/domain/` layer is pure functions with no I/O — that is where scoring weights and geographic math live, and it is unit-tested without a database. The `app/data/` layer wraps Supabase and never leaks Supabase types upward. Postgres triggers maintain dumb counters; weighted scores are computed in TypeScript.
 
-**Tech Stack:** React Router v7 (framework mode) · TypeScript · Vitest · Supabase (Postgres 15 + PostGIS, Auth, Storage, RLS) · Supabase CLI for local development
+**Tech Stack:** React Router v7 (framework mode) · TypeScript · Vitest · Supabase (Postgres 17 + PostGIS, Auth, Storage, RLS) · Supabase CLI for local development
+
+`UNIQUE NULLS NOT DISTINCT` in Task 9 requires Postgres 15 or newer. The local stack runs 17.6.
 
 **Plan sequence:** This is plan 1 of 6. Plans 2–6 cover read-only explore, contribution, signals, filters and views, and trust (spec §13).
 
@@ -2808,7 +2810,8 @@ npx supabase stop && npx supabase start
 
 Run `npm run dev`, open `http://localhost:5173/auth/login`, enter any address, and submit the magic link form.
 
-Open Inbucket at `http://127.0.0.1:54324`, find the message, and follow its link.
+Open Mailpit at `http://127.0.0.1:54324`, find the message, and follow its link. (Older Supabase
+CLI docs call this Inbucket; it is the same port.)
 
 Expected: you land on `/` and it reads "Signed in as ...". Then click Sign out and confirm the link returns to "Sign in".
 
@@ -3071,7 +3074,8 @@ npx supabase status -o env   # copy values into .env, see .env.example
 npm run dev
 ```
 
-Local mail (magic links) is at http://127.0.0.1:54324.
+Local mail (magic links) is at http://127.0.0.1:54324, and Supabase Studio at
+http://127.0.0.1:54323.
 
 ## Commands
 

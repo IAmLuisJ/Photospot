@@ -1,4 +1,11 @@
+import { loadEnv } from "vite";
 import { defineConfig } from "vitest/config";
+
+// Vitest doesn't load `.env` into `process.env` automatically (Vite only
+// exposes `VITE_`-prefixed vars via `import.meta.env` for client code).
+// `tests/db/helpers.ts` reads `process.env.SUPABASE_*` directly, so pull the
+// full `.env` file in here and merge it into `process.env` for every project.
+Object.assign(process.env, loadEnv("", process.cwd(), ""));
 
 export default defineConfig({
   test: {

@@ -40,6 +40,25 @@ describe("snapBoundsToGrid", () => {
     expect(twice).toEqual(once);
   });
 
+  // Integer zoom alone does not prove this: `i * step / step` can come back as
+  // i + 1e-13, which ceils to the next cell and grows the box. Zoom 7.7 with
+  // this east edge is a concrete case (the quotient returns 648.0000000000001).
+  // Map libraries send fractional zoom on every pinch, so this is the common
+  // path rather than an edge case, and an unstable snapped box silently defeats
+  // the query reuse this function exists to provide.
+  it("is idempotent at fractional zoom too", () => {
+    const box: Bounds = {
+      west: -85.7267,
+      south: 42.9214,
+      east: 140.235,
+      north: 42.9891,
+    };
+    for (const zoom of [0.5, 3.3, 7.7, 12.4, 18.9]) {
+      const once = snapBoundsToGrid(box, zoom);
+      expect(snapBoundsToGrid(once, zoom)).toEqual(once);
+    }
+  });
+
   it("gives the same box for a small pan, so the query can be reused", () => {
     const step = gridStepForZoom(12);
     // GR_VIEW's west and north edges happen to sit within ~3.7% of a grid

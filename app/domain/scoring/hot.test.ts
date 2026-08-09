@@ -51,6 +51,15 @@ describe("computeHotScore", () => {
     expect(result).toBe(3);
   });
 
+  // Without this, step decay passes: every other test samples an exact multiple
+  // of the half-life, where a staircase and a smooth curve agree. Verified by
+  // mutation — floor/ceil/round variants of the exponent all survive the rest
+  // of this suite and are caught only here.
+  it("decays continuously between half-lives, not in steps", () => {
+    // Half a half-life: 4 * 0.5^0.5 = 2.828..., not 4 (step) and not 3 (linear).
+    expect(computeHotScore([event(4, HOT_HALF_LIFE_DAYS / 2)], NOW)).toBe(2.828);
+  });
+
   it("treats future timestamps as now rather than amplifying them", () => {
     const future: ActivityEvent = { weight: 5, occurredAt: daysAgo(-10) };
     expect(computeHotScore([future], NOW)).toBe(5);

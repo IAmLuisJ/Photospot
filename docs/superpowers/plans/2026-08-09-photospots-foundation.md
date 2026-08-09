@@ -427,6 +427,15 @@ describe("computeHotScore", () => {
     expect(result).toBe(3);
   });
 
+  // Without this, step decay passes: every other test samples an exact multiple
+  // of the half-life, where a staircase and a smooth curve agree. Verified by
+  // mutation — floor/ceil/round variants of the exponent all survive the rest
+  // of this suite and are caught only here.
+  it("decays continuously between half-lives, not in steps", () => {
+    // Half a half-life: 4 * 0.5^0.5 = 2.828..., not 4 (step) and not 3 (linear).
+    expect(computeHotScore([event(4, HOT_HALF_LIFE_DAYS / 2)], NOW)).toBe(2.828);
+  });
+
   it("treats future timestamps as now rather than amplifying them", () => {
     const future: ActivityEvent = { weight: 5, occurredAt: daysAgo(-10) };
     expect(computeHotScore([future], NOW)).toBe(5);
@@ -446,6 +455,18 @@ Create `app/domain/scoring/hot.ts`:
 ```ts
 /** Spec §7: hot decays on a 14-day half-life over a trailing 90-day window. */
 export const HOT_HALF_LIFE_DAYS = 14;
+
+/**
+ * The window bounds the event scan; decay alone would not.
+ *
+ * At 90 days an event still contributes 0.5^(90/14) ≈ 1.2% of its weight, so
+ * this cutoff is not about arithmetic — it is about I/O. Unlike computeScore,
+ * which reads six precomputed counters, this function needs the individual
+ * events, gathered by scanning signals/comments/photos by created_at. The
+ * window is what keeps that query bounded and indexable as the site ages, and
+ * the same cutoff has to hold here so the function agrees with the query that
+ * feeds it. Don't remove it on the grounds that decay makes it redundant.
+ */
 export const HOT_WINDOW_DAYS = 90;
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
@@ -478,7 +499,7 @@ export function computeHotScore(
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run app/domain/scoring/hot.test.ts`
-Expected: PASS — 8 tests
+Expected: PASS — 9 tests
 
 - [ ] **Step 5: Commit**
 

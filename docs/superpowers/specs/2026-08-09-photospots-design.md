@@ -265,8 +265,15 @@ Score must be sortable in SQL but its weights must be testable in TypeScript. Re
    and no, comment count, photo count. No weighting logic in SQL.
 2. **The command layer computes the weighted score in TypeScript** via `domain/scoring` and writes
    `spots.score` in the same transaction as the signal write.
-3. **`hot_score` is refreshed by a pg_cron job every 15 minutes.** Hot rankings do not need to be
-   real-time, which avoids an event-log table entirely.
+3. **`hot_score` is refreshed on a 15-minute schedule by a Node job, not by pg_cron.** Hot rankings
+   do not need to be real-time, which avoids an event-log table entirely: the job scans
+   signals/comments/photos within the trailing window and calls `computeHotScore`.
+
+   The scheduler must not be pg_cron, despite the convenience. pg_cron runs SQL, and computing
+   `hot_score` in SQL would mean reimplementing the decay curve and the weights there — a second
+   copy of the ranking rules, in a second language, free to drift from `domain/scoring`. That is
+   precisely the failure point 1 exists to prevent. The job is a scheduled Node process mirroring
+   `scripts/backfill-scores.ts`: same service-role write path, same weights, same tested functions.
 
 A **backfill script that recomputes all scores** is built early, because it runs every time weights
 are tuned.

@@ -1,0 +1,87 @@
+import { describe, it, expect } from "vitest";
+import {
+  gridStepForZoom,
+  snapBoundsToGrid,
+  boundsContain,
+  type Bounds,
+} from "./bounds";
+
+const GR_VIEW: Bounds = {
+  west: -85.7267,
+  south: 42.9214,
+  east: -85.6021,
+  north: 42.9891,
+};
+
+describe("gridStepForZoom", () => {
+  it("shrinks the grid as zoom increases", () => {
+    expect(gridStepForZoom(14)).toBeLessThan(gridStepForZoom(10));
+  });
+
+  it("is always positive", () => {
+    for (const zoom of [0, 5, 10, 18, 22]) {
+      expect(gridStepForZoom(zoom)).toBeGreaterThan(0);
+    }
+  });
+});
+
+describe("snapBoundsToGrid", () => {
+  it("expands outward so the snapped box always covers the request", () => {
+    const snapped = snapBoundsToGrid(GR_VIEW, 12);
+    expect(snapped.west).toBeLessThanOrEqual(GR_VIEW.west);
+    expect(snapped.south).toBeLessThanOrEqual(GR_VIEW.south);
+    expect(snapped.east).toBeGreaterThanOrEqual(GR_VIEW.east);
+    expect(snapped.north).toBeGreaterThanOrEqual(GR_VIEW.north);
+  });
+
+  it("is idempotent — snapping a snapped box changes nothing", () => {
+    const once = snapBoundsToGrid(GR_VIEW, 12);
+    const twice = snapBoundsToGrid(once, 12);
+    expect(twice).toEqual(once);
+  });
+
+  it("gives the same box for a small pan, so the query can be reused", () => {
+    const step = gridStepForZoom(12);
+    // GR_VIEW's west and north edges happen to sit within ~3.7% of a grid
+    // line at zoom 12 (verified numerically), so a step/20 (5%) nudge as
+    // originally drafted crosses that boundary and defeats the point of
+    // this test. step/100 keeps the nudge comfortably inside the same
+    // cell on all four edges while still being a nonzero perturbation.
+    const nudge = step / 100;
+    const nudged: Bounds = {
+      west: GR_VIEW.west + nudge,
+      south: GR_VIEW.south + nudge,
+      east: GR_VIEW.east + nudge,
+      north: GR_VIEW.north + nudge,
+    };
+    expect(snapBoundsToGrid(nudged, 12)).toEqual(snapBoundsToGrid(GR_VIEW, 12));
+  });
+
+  it("gives a different box for a large pan", () => {
+    const step = gridStepForZoom(12);
+    const moved: Bounds = {
+      west: GR_VIEW.west + step * 3,
+      south: GR_VIEW.south + step * 3,
+      east: GR_VIEW.east + step * 3,
+      north: GR_VIEW.north + step * 3,
+    };
+    expect(snapBoundsToGrid(moved, 12)).not.toEqual(snapBoundsToGrid(GR_VIEW, 12));
+  });
+
+  it("clamps latitude to the valid range", () => {
+    const polar: Bounds = { west: -10, south: -89.9, east: 10, north: 89.9 };
+    const snapped = snapBoundsToGrid(polar, 3);
+    expect(snapped.south).toBeGreaterThanOrEqual(-90);
+    expect(snapped.north).toBeLessThanOrEqual(90);
+  });
+});
+
+describe("boundsContain", () => {
+  it("accepts a point inside", () => {
+    expect(boundsContain(GR_VIEW, { lat: 42.95, lng: -85.65 })).toBe(true);
+  });
+
+  it("rejects a point outside", () => {
+    expect(boundsContain(GR_VIEW, { lat: 41.0, lng: -85.65 })).toBe(false);
+  });
+});

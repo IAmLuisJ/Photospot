@@ -42,7 +42,15 @@ const gridQuotient = (value: number, step: number): number => {
   return Math.abs(quotient - nearest) <= tolerance ? nearest : quotient;
 };
 
-/** Always expands outward, so the snapped box is a superset of the request. */
+/**
+ * Expands outward, so the snapped box is a superset of the request.
+ *
+ * The one exception is the grid tolerance above: a coordinate sitting within a
+ * few ULPs of a grid line can be pulled onto it, overshooting inward by up to
+ * ~6e-14 degrees — 6 nanometres. Random coordinates never land in that band
+ * (0 of 2,000,000 sampled); reaching it requires constructing an input at ULP
+ * distance from a cell edge.
+ */
 export function snapBoundsToGrid(bounds: Bounds, zoom: number): Bounds {
   const step = gridStepForZoom(zoom);
   return {

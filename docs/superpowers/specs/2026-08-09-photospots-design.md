@@ -278,6 +278,13 @@ Score must be sortable in SQL but its weights must be testable in TypeScript. Re
 A **backfill script that recomputes all scores** is built early, because it runs every time weights
 are tuned.
 
+**The weight-mapping seam.** `computeScore` applies weights internally, but `computeHotScore` takes
+events whose weights the caller has already applied. So the hot-refresh job must map signal kind to
+weight somewhere, and a fresh `switch (kind)` written there is the single most likely place for the
+two rankings to drift apart after a re-weighting — the exact failure point 1 exists to prevent.
+Whichever plan builds the refresh job must route that mapping through one shared
+`weightForSignalKind(kind, weights)` in `domain/scoring`, not reimplement it.
+
 Initial weights (configuration, expected to change):
 
 | Signal | Weight |

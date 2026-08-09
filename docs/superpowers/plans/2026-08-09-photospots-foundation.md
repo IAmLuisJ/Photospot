@@ -687,6 +687,13 @@ describe("gridStepForZoom", () => {
       expect(gridStepForZoom(zoom)).toBeGreaterThan(0);
     }
   });
+
+  // Pins the divisor. Every other test derives its expectations from
+  // gridStepForZoom itself, so they move with the function and would not
+  // notice the cell size changing — but the divisor sets how much we over-fetch.
+  it("puts eight cells across the world at zoom 0", () => {
+    expect(gridStepForZoom(0)).toBe(45);
+  });
 });
 
 describe("snapBoundsToGrid", () => {
@@ -781,6 +788,14 @@ describe("boundsContain", () => {
   it("rejects a point outside", () => {
     expect(boundsContain(GR_VIEW, { lat: 41.0, lng: -85.65 })).toBe(false);
   });
+
+  // All four edges compare inclusively, and that choice is load-bearing because
+  // snapped boxes are grid lines: a spot sitting exactly on the shared edge of
+  // two adjacent cells appears in both boxes rather than in neither.
+  it("includes a point exactly on the boundary", () => {
+    expect(boundsContain(GR_VIEW, { lat: GR_VIEW.north, lng: GR_VIEW.west })).toBe(true);
+    expect(boundsContain(GR_VIEW, { lat: GR_VIEW.south, lng: GR_VIEW.east })).toBe(true);
+  });
 });
 ```
 
@@ -838,7 +853,15 @@ const gridQuotient = (value: number, step: number): number => {
   return Math.abs(quotient - nearest) <= tolerance ? nearest : quotient;
 };
 
-/** Always expands outward, so the snapped box is a superset of the request. */
+/**
+ * Expands outward, so the snapped box is a superset of the request.
+ *
+ * The one exception is the grid tolerance above: a coordinate sitting within a
+ * few ULPs of a grid line can be pulled onto it, overshooting inward by up to
+ * ~6e-14 degrees — 6 nanometres. Random coordinates never land in that band
+ * (0 of 2,000,000 sampled); reaching it requires constructing an input at ULP
+ * distance from a cell edge.
+ */
 export function snapBoundsToGrid(bounds: Bounds, zoom: number): Bounds {
   const step = gridStepForZoom(zoom);
   return {
@@ -862,12 +885,12 @@ export function boundsContain(bounds: Bounds, point: LatLng): boolean {
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run app/domain/geo/bounds.test.ts`
-Expected: PASS — 11 tests
+Expected: PASS — 13 tests
 
 - [ ] **Step 5: Run the whole domain suite**
 
 Run: `npx vitest run app/domain`
-Expected: PASS — 5 files, 36 tests, completing in under a second with no database
+Expected: PASS — 5 files, 38 tests, completing in under a second with no database
 
 - [ ] **Step 6: Commit**
 
@@ -3072,6 +3095,18 @@ Local mail (magic links) is at http://127.0.0.1:54324.
 
 Scoring weights are configuration in `app/domain/scoring/weights.ts`. Changing
 them requires running `npm run backfill:scores`.
+
+## Conventions
+
+**Tunables are a named exported constant plus an optional trailing parameter
+that overrides it** — `DEFAULT_WEIGHTS`/`weights`, `HOT_HALF_LIFE_DAYS`/`halfLifeDays`,
+`DUPLICATE_RADIUS_METERS`/`radiusMeters`. This is what lets every domain module
+be tested at its edges without fixtures. Follow it in new modules.
+
+**Database types stay in `app/data/`.** The domain layer defines its own shapes
+(`SpotCounters`, `ActivityEvent`, `LatLng`, `Bounds`); mapping functions live in
+the data layer and point inward. Importing a generated Supabase row type into
+`app/domain/` would end the layer's independence from the database.
 ```
 
 - [ ] **Step 2: Run the full test suite**

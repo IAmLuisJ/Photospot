@@ -23,6 +23,13 @@ describe("gridStepForZoom", () => {
       expect(gridStepForZoom(zoom)).toBeGreaterThan(0);
     }
   });
+
+  // Pins the divisor. Every other test derives its expectations from
+  // gridStepForZoom itself, so they move with the function and would not
+  // notice the cell size changing — but the divisor sets how much we over-fetch.
+  it("puts eight cells across the world at zoom 0", () => {
+    expect(gridStepForZoom(0)).toBe(45);
+  });
 });
 
 describe("snapBoundsToGrid", () => {
@@ -117,5 +124,13 @@ describe("boundsContain", () => {
 
   it("rejects a point outside", () => {
     expect(boundsContain(GR_VIEW, { lat: 41.0, lng: -85.65 })).toBe(false);
+  });
+
+  // All four edges compare inclusively, and that choice is load-bearing because
+  // snapped boxes are grid lines: a spot sitting exactly on the shared edge of
+  // two adjacent cells appears in both boxes rather than in neither.
+  it("includes a point exactly on the boundary", () => {
+    expect(boundsContain(GR_VIEW, { lat: GR_VIEW.north, lng: GR_VIEW.west })).toBe(true);
+    expect(boundsContain(GR_VIEW, { lat: GR_VIEW.south, lng: GR_VIEW.east })).toBe(true);
   });
 });

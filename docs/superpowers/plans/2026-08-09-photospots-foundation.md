@@ -3372,66 +3372,16 @@ git commit -m "feat: add score backfill script for weight changes"
 
 - [ ] **Step 1: Write the README**
 
-Create `README.md`:
+The README was written early (during Task 7) because the repository is public and was otherwise
+showing the React Router scaffold template. **Update it rather than create it**, and verify every
+claim still holds:
 
-```markdown
-# Photospots
+- Move `backfill:scores` into the command table — it exists as of Task 15.
+- Move `app/data/` out of "(planned)" in the Layout section — it exists as of Task 13.
+- Restore the weights convention to name the backfill script directly.
+- Update the Status table: the foundation is complete.
 
-A map of photography locations, cultivated by local photographers. See
-`docs/superpowers/specs/2026-08-09-photospots-design.md` for the design.
-
-## Requirements
-
-- Node 20+
-- Docker (for the local Supabase stack)
-
-## Setup
-
-```bash
-npm install
-npx supabase start
-npx supabase status -o env   # copy values into .env, see .env.example
-npm run dev
-```
-
-Local mail (magic links) is at http://127.0.0.1:54324, and Supabase Studio at
-http://127.0.0.1:54323.
-
-## Commands
-
-| Command | Purpose |
-| --- | --- |
-| `npm run dev` | Dev server |
-| `npm test` | Everything |
-| `npm run test:unit` | Pure domain tests — fast, no Docker needed |
-| `npm run test:db` | Database and RLS tests — requires `npx supabase start` |
-| `npm run typecheck` | TypeScript |
-| `npx supabase db reset` | Replay all migrations |
-| `npm run backfill:scores` | Recompute scores after changing weights |
-
-## Layout
-
-- `app/domain/` — pure functions, no I/O. Scoring and geography live here.
-- `app/data/` — Supabase queries. Database types do not escape this directory.
-- `app/routes/` — thin loaders and actions.
-- `supabase/migrations/` — schema, triggers, RLS.
-- `tests/db/` — integration and RLS tests against local Supabase.
-
-Scoring weights are configuration in `app/domain/scoring/weights.ts`. Changing
-them requires running `npm run backfill:scores`.
-
-## Conventions
-
-**Tunables are a named exported constant plus an optional trailing parameter
-that overrides it** — `DEFAULT_WEIGHTS`/`weights`, `HOT_HALF_LIFE_DAYS`/`halfLifeDays`,
-`DUPLICATE_RADIUS_METERS`/`radiusMeters`. This is what lets every domain module
-be tested at its edges without fixtures. Follow it in new modules.
-
-**Database types stay in `app/data/`.** The domain layer defines its own shapes
-(`SpotCounters`, `ActivityEvent`, `LatLng`, `Bounds`); mapping functions live in
-the data layer and point inward. Importing a generated Supabase row type into
-`app/domain/` would end the layer's independence from the database.
-```
+Every path, script, and URL the README mentions must exist. Check them, don't assume.
 
 - [ ] **Step 2: Run the full test suite**
 

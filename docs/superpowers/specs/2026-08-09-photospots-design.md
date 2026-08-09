@@ -378,6 +378,14 @@ Both use the `reports` table and the admin queue. Resolution actions are hide an
 
 - **Row-level security carries the authorization rules**, not application `if` statements: submitter
   and admin can edit a spot, studio owner can edit their listing, anyone can read published spots.
+- **RLS filters access; it does not grant it.** Every table also needs explicit `GRANT`s to `anon`
+  and `authenticated`, or those roles get `42501 permission denied` before a policy is consulted.
+  This is not automatic: Supabase's default grants cover tables owned by `supabase_admin`, but
+  migrations run as `postgres`, whose default ACL confers no SELECT/INSERT/UPDATE/DELETE.
+- **Policies authorize rows; column grants authorize columns.** Where a row-level policy would
+  otherwise expose a field it shouldn't — a user editing their own profile must not be able to set
+  their own `role`, since `is_admin()` reads it — the protection has to be a column-scoped `GRANT`.
+  The same applies to derived columns like `spots.score`.
 - Photo rights attestation and attribution as described in §4.3.
 - A working takedown path from day one.
 

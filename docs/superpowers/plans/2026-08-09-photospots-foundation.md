@@ -2159,6 +2159,49 @@ describe("derived columns", () => {
   });
 });
 
+describe("privilege escalation", () => {
+  // The profiles_update_own policy authorises the ROW, not the columns, so it
+  // cannot stop a user rewriting their own `role`. Only the column-scoped grant
+  // does. Since is_admin() reads profiles.role, a hole here is total.
+  it("does not let a user promote themselves to admin", async () => {
+    await stranger.client.from("profiles").update({ role: "admin" }).eq("id", stranger.id);
+
+    const { data } = await serviceClient()
+      .from("profiles")
+      .select("role")
+      .eq("id", stranger.id)
+      .single();
+
+    expect(data?.role).toBe("user");
+  });
+
+  it("still lets a user edit their own display name", async () => {
+    const { error } = await stranger.client
+      .from("profiles")
+      .update({ display_name: "Renamed" })
+      .eq("id", stranger.id);
+    expect(error).toBeNull();
+
+    const { data } = await serviceClient()
+      .from("profiles")
+      .select("display_name")
+      .eq("id", stranger.id)
+      .single();
+    expect(data?.display_name).toBe("Renamed");
+  });
+});
+
+// Proves the base grants exist at all. Without them every test above would fail
+// with 42501 before RLS was consulted, which is a different failure than a
+// policy correctly denying access — and the assertions cannot tell them apart.
+describe("base privileges", () => {
+  it("lets a logged-out visitor read reference data", async () => {
+    const { data, error } = await anonClient().from("shoot_types").select("slug");
+    expect(error).toBeNull();
+    expect((data ?? []).length).toBe(9);
+  });
+});
+
 describe("reports", () => {
   it("is not readable by a non-admin", async () => {
     await serviceClient().from("reports").insert({
@@ -2213,11 +2256,51 @@ as $$
   );
 $$;
 
+-- Base privileges. RLS FILTERS access, it does not GRANT it: with no table
+-- privilege, anon and authenticated get 42501 permission denied before any
+-- policy is ever consulted, and every policy below would be inert.
+--
+-- This is NOT handled automatically. Supabase's default grants apply to tables
+-- owned by supabase_admin; migrations run as postgres, whose default ACL gives
+-- anon and authenticated only Dxtm (TRUNCATE/REFERENCES/TRIGGER/MAINTAIN) —
+-- no SELECT/INSERT/UPDATE/DELETE. Verified against pg_default_acl on 17.6.
+--
+-- anon gets SELECT and nothing else: browsing is open to logged-out visitors,
+-- contributing requires an account (spec §4.6).
+
+grant select on public.shoot_types        to anon, authenticated;
+grant select on public.profiles           to anon, authenticated;
+grant select on public.spots              to anon, authenticated;
+grant select on public.spot_shoot_types   to anon, authenticated;
+grant select on public.signals            to anon, authenticated;
+grant select on public.photos             to anon, authenticated;
+grant select on public.spot_gallery_links to anon, authenticated;
+grant select on public.comments           to anon, authenticated;
+grant select on public.studio_details     to anon, authenticated;
+
+grant insert                 on public.spots              to authenticated;
+grant insert, delete         on public.spot_shoot_types   to authenticated;
+grant insert, delete         on public.signals            to authenticated;
+grant insert, update         on public.photos             to authenticated;
+grant insert, delete         on public.spot_gallery_links to authenticated;
+grant insert, update         on public.comments           to authenticated;
+grant insert, update, delete on public.studio_details     to authenticated;
+grant insert, select, update on public.reports            to authenticated;
+
 -- Reference data and profiles are public reads.
 create policy shoot_types_read on public.shoot_types for select using (true);
 create policy profiles_read    on public.profiles    for select using (true);
 create policy profiles_update_own on public.profiles for update
   using (id = auth.uid()) with check (id = auth.uid());
+
+-- A user may edit their own profile but NOT their own `role`. The policy above
+-- cannot express that — it authorises the ROW, not the columns. With a
+-- table-wide UPDATE grant, any user could run
+--     update profiles set role = 'admin' where id = auth.uid()
+-- and is_admin() would return true for them from then on. Granting only the
+-- editable columns is what actually closes the escalation.
+grant update (display_name, avatar_url, bio, website_url, instagram)
+  on public.profiles to authenticated;
 
 -- Spots: anyone reads published; submitter, listing owner, or admin writes.
 create policy spots_read on public.spots for select
@@ -2230,16 +2313,11 @@ create policy spots_update on public.spots for update
   using (created_by = auth.uid() or owner_profile_id = auth.uid() or public.is_admin())
   with check (created_by = auth.uid() or owner_profile_id = auth.uid() or public.is_admin());
 
--- Derived columns are maintained by triggers and by the command layer running
--- with elevated rights. Users may never set them directly.
---
--- This must be a table-level REVOKE followed by column-level GRANTs, not a
--- column-level REVOKE: a table-wide UPDATE grant already covers every column,
--- and revoking individual columns against it does nothing. Supabase grants
--- table-wide UPDATE to anon and authenticated by default, so the broad grant
--- has to come off first.
-revoke update on public.spots from anon, authenticated;
-
+-- Derived columns (score, hot_score, the counters) are maintained by triggers
+-- and by the command layer running with elevated rights. Users may never set
+-- them directly, so UPDATE is granted per column and never table-wide. No
+-- REVOKE is needed first: the default ACL grants authenticated no UPDATE at
+-- all, so there is nothing to take away.
 grant update (
   name, slug, description, kind, location, locality, region, status,
   owner_profile_id, cost_type, cost_notes, permit_url, hours_notes,
@@ -2312,7 +2390,7 @@ Expected: success.
 - [ ] **Step 5: Run the test to verify it passes**
 
 Run: `npx vitest run tests/db/rls.test.ts`
-Expected: PASS — 13 tests
+Expected: PASS — 16 tests
 
 - [ ] **Step 6: Run the full suite**
 
@@ -3144,6 +3222,9 @@ git commit -m "docs: add README with setup and project layout"
 - Signing in with a magic link works locally end to end, and signing out works
 - `npx supabase db reset` replays every migration from empty
 - A second `shoot_again` vote from the same user is rejected with error code `23505`
+- A logged-out visitor can read `shoot_types` — proving the base grants exist, since without them
+  every RLS test would fail with `42501` rather than exercising a policy
+- A user cannot promote themselves by setting `profiles.role` to `admin`
 
 ## Not in this plan
 

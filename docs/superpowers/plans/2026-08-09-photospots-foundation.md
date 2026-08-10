@@ -1431,8 +1431,18 @@ create index spots_hot_score_idx on public.spots (hot_score desc);
 create index spots_status_idx    on public.spots (status);
 create index spots_kind_idx      on public.spots (kind);
 
+-- See migration 1's grant comment on public.profiles for the rationale:
+-- service_role only until task 11 adds row-level security policies.
+grant select, insert, update, delete on public.spots to service_role;
+
+-- Enabled here rather than in task 11 so the table fails CLOSED for the three
+-- tasks in between (9, 10, 11 itself before its policies land).
+alter table public.spots enable row level security;
+
 create or replace function public.touch_updated_at()
-returns trigger language plpgsql as $$
+returns trigger language plpgsql
+set search_path = ''
+as $$
 begin
   new.updated_at := now();
   return new;
@@ -1447,6 +1457,11 @@ create trigger spots_touch_updated_at
 -- Spec §9.1 defines a duplicate as proximity AND matching kind: an outdoor pin
 -- dropped beside a studio is not a duplicate of it, so p_kind is required
 -- rather than optional.
+--
+-- search_path is pinned rather than left to resolve via the caller (PostgREST
+-- connects as authenticator and switches role per request, but does not reset
+-- search_path), so st_dwithin/st_point/st_distance resolve deterministically
+-- to PostGIS in `extensions` regardless of caller.
 create or replace function public.spots_within_meters(
   p_lng double precision,
   p_lat double precision,
@@ -1456,6 +1471,7 @@ create or replace function public.spots_within_meters(
 returns setof public.spots
 language sql
 stable
+set search_path = public, extensions
 as $$
   select *
   from public.spots

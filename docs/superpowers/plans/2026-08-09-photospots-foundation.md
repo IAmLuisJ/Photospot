@@ -3228,6 +3228,15 @@ describe("getProfile", () => {
     });
   });
 
+  // Photographer credits render for logged-out visitors, so this path crosses
+  // both the anon SELECT grant and the profiles_read policy. Every other test
+  // here reads as service_role or as the user themselves, which exercises
+  // neither.
+  it("is readable by a logged-out visitor", async () => {
+    const profile = await getProfile(anonClient(), user.id);
+    expect(profile?.displayName).toBe("Grace Hopper");
+  });
+
   it("returns null for an unknown id", async () => {
     const profile = await getProfile(
       serviceClient(),
@@ -3320,7 +3329,7 @@ export async function getCurrentProfile(
 - [ ] **Step 4: Run the test to verify it passes**
 
 Run: `npx vitest run tests/db/profiles-data.test.ts`
-Expected: PASS — 4 tests
+Expected: PASS — 5 tests
 
 - [ ] **Step 5: Commit**
 

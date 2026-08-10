@@ -1324,6 +1324,9 @@ git commit -m "feat: seed Grand Rapids spots with placeholder photos"
 npm install maplibre-gl
 ```
 
+v6 or newer has **no default export** — `import maplibregl from "maplibre-gl"` fails typecheck with
+TS1192. Use the named imports shown in step 4.
+
 - [ ] **Step 2: Write the failing test**
 
 The map itself needs a real canvas, which jsdom does not provide. What is worth testing is the **props contract** — that the component computes the right marker set and reports viewport changes in the shape the rest of the app expects. Both live in exported pure helpers.
@@ -1406,7 +1409,8 @@ Create `app/components/map/SpotMap.tsx`:
 
 ```tsx
 import { useEffect, useRef } from "react";
-import maplibregl from "maplibre-gl";
+// maplibre-gl v6 dropped the default export; these are named.
+import { Map as MapLibreMap, Marker, NavigationControl } from "maplibre-gl";
 import type { Bounds } from "~/domain/geo/bounds";
 import type { SpotSummary } from "~/data/spots";
 
@@ -1476,15 +1480,15 @@ export function SpotMap({
   onSelect,
 }: SpotMapProps) {
   const container = useRef<HTMLDivElement>(null);
-  const map = useRef<maplibregl.Map | null>(null);
-  const markers = useRef<maplibregl.Marker[]>([]);
+  const map = useRef<MapLibreMap | null>(null);
+  const markers = useRef<Marker[]>([]);
   const onViewportChangeRef = useRef(onViewportChange);
   onViewportChangeRef.current = onViewportChange;
 
   useEffect(() => {
     if (!container.current || map.current) return;
 
-    const instance = new maplibregl.Map({
+    const instance = new MapLibreMap({
       container: container.current,
       style: styleUrl,
       bounds: [
@@ -1493,7 +1497,7 @@ export function SpotMap({
       ],
       attributionControl: { compact: true },
     });
-    instance.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+    instance.addControl(new NavigationControl({ showCompass: false }), "top-right");
 
     // `moveend` rather than `move`: one event per gesture instead of one per
     // frame. Snapping to the grid then means small pans reuse the same query.
@@ -1522,7 +1526,7 @@ export function SpotMap({
         event.stopPropagation();
         onSelect(marker.slug);
       });
-      return new maplibregl.Marker({ element: el })
+      return new Marker({ element: el })
         .setLngLat([marker.lng, marker.lat])
         .addTo(instance);
     });

@@ -1,0 +1,101 @@
+import type { Bounds } from "../geo/bounds";
+
+export type ExploreView = "split" | "map" | "gallery";
+export type ExploreSort = "score" | "hot";
+
+export interface ExploreFilters {
+  viewport: Bounds;
+  zoom: number;
+  shootTypeId: number | null;
+  sort: ExploreSort;
+  view: ExploreView;
+}
+
+/** Downtown Grand Rapids — the launch market (spec §2). */
+export const DEFAULT_VIEWPORT: Bounds = Object.freeze({
+  west: -85.7267,
+  south: 42.9214,
+  east: -85.6021,
+  north: 42.9891,
+});
+
+export const DEFAULT_FILTERS: ExploreFilters = Object.freeze({
+  viewport: DEFAULT_VIEWPORT,
+  zoom: 12,
+  shootTypeId: null,
+  sort: "score",
+  view: "split",
+});
+
+const VIEWS: readonly string[] = ["split", "map", "gallery"];
+const SORTS: readonly string[] = ["score", "hot"];
+
+/** Six decimals is about 10 cm — far finer than a hand-dropped pin. */
+const round6 = (n: number) => Math.round(n * 1e6) / 1e6;
+
+const num = (params: URLSearchParams, key: string): number | null => {
+  const raw = params.get(key);
+  if (raw === null || raw.trim() === "") return null;
+  const value = Number(raw);
+  return Number.isFinite(value) ? value : null;
+};
+
+const readViewport = (params: URLSearchParams): Bounds => {
+  const west = num(params, "w");
+  const south = num(params, "s");
+  const east = num(params, "e");
+  const north = num(params, "n");
+
+  // All four or none — a partial box would silently query the wrong region.
+  if (west === null || south === null || east === null || north === null) {
+    return DEFAULT_VIEWPORT;
+  }
+  const inRange =
+    west >= -180 && east <= 180 && south >= -90 && north <= 90 && west < east && south < north;
+
+  return inRange ? { west, south, east, north } : DEFAULT_VIEWPORT;
+};
+
+/**
+ * Search params are user-editable and arrive from other people's links, so
+ * every field falls back to a default rather than throwing. A bad URL should
+ * show Grand Rapids, not an error page.
+ */
+export function parseExploreFilters(params: URLSearchParams): ExploreFilters {
+  const zoomRaw = num(params, "z");
+  const typeRaw = num(params, "type");
+  const view = params.get("view");
+  const sort = params.get("sort");
+
+  return {
+    viewport: readViewport(params),
+    zoom: zoomRaw === null ? DEFAULT_FILTERS.zoom : Math.min(22, Math.max(0, zoomRaw)),
+    shootTypeId: typeRaw !== null && Number.isInteger(typeRaw) ? typeRaw : null,
+    sort: sort !== null && SORTS.includes(sort) ? (sort as ExploreSort) : "score",
+    view: view !== null && VIEWS.includes(view) ? (view as ExploreView) : "split",
+  };
+}
+
+/** Only non-default values are written, so a share link stays readable. */
+export function filtersToSearchParams(filters: ExploreFilters): URLSearchParams {
+  const params = new URLSearchParams();
+  const { viewport: v } = filters;
+
+  if (
+    v.west !== DEFAULT_VIEWPORT.west ||
+    v.south !== DEFAULT_VIEWPORT.south ||
+    v.east !== DEFAULT_VIEWPORT.east ||
+    v.north !== DEFAULT_VIEWPORT.north
+  ) {
+    params.set("w", String(round6(v.west)));
+    params.set("s", String(round6(v.south)));
+    params.set("e", String(round6(v.east)));
+    params.set("n", String(round6(v.north)));
+  }
+  if (filters.zoom !== DEFAULT_FILTERS.zoom) params.set("z", String(filters.zoom));
+  if (filters.shootTypeId !== null) params.set("type", String(filters.shootTypeId));
+  if (filters.sort !== DEFAULT_FILTERS.sort) params.set("sort", filters.sort);
+  if (filters.view !== DEFAULT_FILTERS.view) params.set("view", filters.view);
+
+  return params;
+}

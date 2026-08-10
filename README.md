@@ -27,7 +27,11 @@ with a duplicate check before the form. 240 tests. Voting and comments are next.
 | ✅ Contribution | Submission with duplicate check, photo upload, editing, gallery links |
 | ⬜ Next | Voting and comments |
 
-Design and implementation plan live in [`docs/superpowers/`](docs/superpowers/).
+**Working on this?** Start with [`docs/STATUS.md`](docs/STATUS.md) for where things stand and what's
+next, and [`docs/ENGINEERING-NOTES.md`](docs/ENGINEERING-NOTES.md) for the traps this codebase has
+already fallen into — every entry there was a real bug.
+
+Design and plans live in [`docs/superpowers/`](docs/superpowers/).
 
 ## How it works
 

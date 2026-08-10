@@ -718,6 +718,17 @@ describe("applyPendingUpvote", () => {
     applyPendingUpvote(original, { shootTypeId: 1, upvoted: true });
     expect(original).toEqual(rows());
   });
+
+  // Distinct from the mutation check above: this proves the *output* rows
+  // are independent copies, not aliases back into the input array — even on
+  // the unchanged paths where the values happen to be identical. Without
+  // this, a caller that mutates a returned row in place would corrupt the
+  // input too, and no other test here would notice.
+  it("returns fresh row objects, not aliases into the input", () => {
+    const input = rows();
+    const after = applyPendingUpvote(input, { shootTypeId: 1, upvoted: true });
+    after.forEach((row, i) => expect(row).not.toBe(input[i]));
+  });
 });
 
 const shootAgain = (over: Partial<ShootAgainState> = {}): ShootAgainState => ({
@@ -760,9 +771,17 @@ describe("applyPendingShootAgain", () => {
     expect(applyPendingShootAgain(before, 1)).toEqual(before);
   });
 
+  // As originally drafted this asserted `toEqual(before)`, i.e. that
+  // retracting leaves viewerAnswer at 1 unchanged. That's unsatisfiable
+  // alongside "takes the vote back on a retraction" above, which requires
+  // viewerAnswer to become null on any `null` pending — no implementation
+  // can satisfy both. Corrected to check the actual intent: clamp keeps
+  // yesCount from going negative, while viewerAnswer still transitions.
   it("never shows a negative count", () => {
     const before = shootAgain({ yesCount: 0, noCount: 0, viewerAnswer: 1 });
-    expect(applyPendingShootAgain(before, null)).toEqual(before);
+    expect(applyPendingShootAgain(before, null)).toEqual(
+      shootAgain({ yesCount: 0, noCount: 0, viewerAnswer: null }),
+    );
   });
 });
 ```
@@ -822,6 +841,10 @@ export function applyPendingUpvote(
   pending: PendingUpvote | null,
 ): ShootTypeVoteState[] {
   return rows.map((row) => {
+    // Copy even on the unchanged paths. Without it these rows would be the
+    // exact objects from the input array, so a caller that mutates the
+    // returned rows would silently mutate the input too. Copying makes the
+    // function safe by construction rather than by convention.
     if (!pending || pending.shootTypeId !== row.shootTypeId) return { ...row };
     if (pending.upvoted === row.viewerUpvoted) return { ...row };
 
@@ -862,19 +885,26 @@ export function applyPendingShootAgain(
 npm run test:unit -- vote-state
 ```
 
-Expected: 13 passing.
+Expected: 14 passing.
 
-- [ ] **Step 5: Mutation-test the two rules that matter**
+- [ ] **Step 5: Mutation-test the rules that matter**
 
-Run each of these, confirm the named test fails, then restore:
+Run each of these, confirm the named test(s) fail, then restore:
 
-| Mutation | Test that must go red |
+| Mutation | Test(s) that must go red |
 | --- | --- |
 | Delete `if (pending.upvoted === row.viewerUpvoted) return { ...row };` | "is idempotent — re-asserting a vote the viewer already cast changes nothing" |
-| Delete both `if (state.viewerAnswer === …) …` lines in `applyPendingShootAgain` | "moves the vote across when the viewer flips their answer" |
+| Delete both `if (state.viewerAnswer === …) …` lines in `applyPendingShootAgain` | "moves the vote across when the viewer flips their answer" **and** "takes the vote back on a retraction" — deleting the pair kills two tests, not the one you'd guess from reading only the "flip" test |
 | Change `clamp` to `(n) => n` | "never shows a negative count" |
+| Remove `!pending \|\|` from the upvote guard, leaving `pending.shootTypeId !== row.shootTypeId` (now dereferences `pending` unconditionally) | "returns the rows unchanged when nothing is in flight" — throws `TypeError: Cannot read properties of null`, which counts as red |
+| Flip the upvote comparison from `!==` to `===` | four tests: "adds the viewer's vote optimistically", "removes it again on a retraction", "is idempotent — re-asserting a vote the viewer already cast changes nothing", "ignores a shoot type that is not on the list" |
+| Replace both `{ ...row }` early-return copies with bare `row` | "returns fresh row objects, not aliases into the input" — this test exists specifically to catch this mutation; without it, this mutation is invisible (13/13 stayed green when this was first tried, before the test was added) |
+| Delete only `if (state.viewerAnswer === 1) yesCount = clamp(yesCount - 1);` (keep the `=== 0` line) | "moves the vote across when the viewer flips their answer" |
+| Delete only `if (state.viewerAnswer === 0) noCount = clamp(noCount - 1);` (keep the `=== 1` line) | "takes the vote back on a retraction" |
+| Delete only `if (pending === 1) yesCount += 1;` | "counts a first answer" |
+| Delete only `if (pending === 0) noCount += 1;` | "moves the vote across when the viewer flips their answer" |
 
-If any of them stays green, the test is not testing what it says.
+If any of them stays green, the test is not testing what it says. The `{ ...row }` row above is a real example of that happening: it survived on the first pass, which is why "returns fresh row objects, not aliases into the input" is in the Step 1 test block at all — the copies were correct all along, but nothing proved it until this test existed.
 
 - [ ] **Step 6: Commit**
 

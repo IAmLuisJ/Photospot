@@ -38,6 +38,10 @@ export function applyPendingUpvote(
   pending: PendingUpvote | null,
 ): ShootTypeVoteState[] {
   return rows.map((row) => {
+    // Copy even on the unchanged paths. Without it these rows would be the
+    // exact objects from the input array, so a caller that mutates the
+    // returned rows would silently mutate the input too. Copying makes the
+    // function safe by construction rather than by convention.
     if (!pending || pending.shootTypeId !== row.shootTypeId) return { ...row };
     if (pending.upvoted === row.viewerUpvoted) return { ...row };
 

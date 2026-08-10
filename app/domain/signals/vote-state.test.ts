@@ -50,6 +50,17 @@ describe("applyPendingUpvote", () => {
     applyPendingUpvote(original, { shootTypeId: 1, upvoted: true });
     expect(original).toEqual(rows());
   });
+
+  // Distinct from the mutation check above: this proves the *output* rows
+  // are independent copies, not aliases back into the input array — even on
+  // the unchanged paths where the values happen to be identical. Without
+  // this, a caller that mutates a returned row in place would corrupt the
+  // input too, and no other test here would notice.
+  it("returns fresh row objects, not aliases into the input", () => {
+    const input = rows();
+    const after = applyPendingUpvote(input, { shootTypeId: 1, upvoted: true });
+    after.forEach((row, i) => expect(row).not.toBe(input[i]));
+  });
 });
 
 const shootAgain = (over: Partial<ShootAgainState> = {}): ShootAgainState => ({

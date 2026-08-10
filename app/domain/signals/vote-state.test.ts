@@ -106,8 +106,10 @@ describe("applyPendingShootAgain", () => {
   // As given in the plan this test asserted `toEqual(before)`, i.e. that
   // retracting leaves viewerAnswer at 1. That contradicts "takes the vote
   // back on a retraction" above, which requires viewerAnswer to become null
-  // on any `null` pending. Fixed to check the actual intent: clamp keeps
-  // yesCount from going negative, while viewerAnswer still transitions.
+  // on any `null` pending — the only way to satisfy both would be to branch
+  // on the counters being zero, which is not a rule anyone wants. Fixed to
+  // check the actual intent: clamp keeps yesCount from going negative, while
+  // viewerAnswer still transitions.
   it("never shows a negative count", () => {
     const before = shootAgain({ yesCount: 0, noCount: 0, viewerAnswer: 1 });
     expect(applyPendingShootAgain(before, null)).toEqual(

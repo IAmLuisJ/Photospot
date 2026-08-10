@@ -19,7 +19,13 @@ export interface ShootAgainState {
   viewerAnswer: 0 | 1 | null;
 }
 
-/** `null` retracts; `undefined` means nothing is in flight. */
+/**
+ * `null` retracts; `undefined` means nothing is in flight.
+ *
+ * Three of the four values are falsy — `0` is a real answer meaning "no". So
+ * `if (!pending)` is always wrong here: it reads a "no" vote as nothing
+ * happening. Compare against `undefined` explicitly, as below.
+ */
 export type PendingShootAgain = 0 | 1 | null | undefined;
 
 const clamp = (n: number) => (n < 0 ? 0 : n);

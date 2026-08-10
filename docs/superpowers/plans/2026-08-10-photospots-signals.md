@@ -772,11 +772,12 @@ describe("applyPendingShootAgain", () => {
   });
 
   // As originally drafted this asserted `toEqual(before)`, i.e. that
-  // retracting leaves viewerAnswer at 1 unchanged. That's unsatisfiable
-  // alongside "takes the vote back on a retraction" above, which requires
-  // viewerAnswer to become null on any `null` pending — no implementation
-  // can satisfy both. Corrected to check the actual intent: clamp keeps
-  // yesCount from going negative, while viewerAnswer still transitions.
+  // retracting leaves viewerAnswer at 1 unchanged. That contradicts "takes
+  // the vote back on a retraction" above, which requires viewerAnswer to
+  // become null on any `null` pending — the only way to satisfy both would
+  // be to branch on the counters being zero, which is not a rule anyone
+  // wants. Corrected to check the actual intent: clamp keeps yesCount from
+  // going negative, while viewerAnswer still transitions.
   it("never shows a negative count", () => {
     const before = shootAgain({ yesCount: 0, noCount: 0, viewerAnswer: 1 });
     expect(applyPendingShootAgain(before, null)).toEqual(
@@ -822,7 +823,13 @@ export interface ShootAgainState {
   viewerAnswer: 0 | 1 | null;
 }
 
-/** `null` retracts; `undefined` means nothing is in flight. */
+/**
+ * `null` retracts; `undefined` means nothing is in flight.
+ *
+ * Three of the four values are falsy — `0` is a real answer meaning "no". So
+ * `if (!pending)` is always wrong here: it reads a "no" vote as nothing
+ * happening. Compare against `undefined` explicitly, as below.
+ */
 export type PendingShootAgain = 0 | 1 | null | undefined;
 
 const clamp = (n: number) => (n < 0 ? 0 : n);

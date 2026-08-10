@@ -419,6 +419,11 @@ Column-scoping alone is insufficient here, because admins are `authenticated` to
   and `authenticated`, or those roles get `42501 permission denied` before a policy is consulted.
   This is not automatic: Supabase's default grants cover tables owned by `supabase_admin`, but
   migrations run as `postgres`, whose default ACL confers no SELECT/INSERT/UPDATE/DELETE.
+- **Functions are executable by `PUBLIC` unless revoked.** Postgres grants `EXECUTE` on every new
+  function to `PUBLIC`, so writing `grant execute … to authenticated` does not restrict anything —
+  the default grant is still there. Every function needs an explicit `revoke … from public` first.
+  This matters most for `security definer` functions, which would otherwise give anonymous callers a
+  privileged write path.
 - **Policies authorize rows; column grants authorize columns.** Where a row-level policy would
   otherwise expose a field it shouldn't — a user editing their own profile must not be able to set
   their own `role`, since `is_admin()` reads it — the protection has to be a column-scoped `GRANT`.

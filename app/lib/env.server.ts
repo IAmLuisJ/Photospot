@@ -1,13 +1,22 @@
 import { z } from "zod";
 
+/**
+ * MapLibre's free demo tiles. Fine for development; production should set
+ * MAP_STYLE_URL to a real provider (spec §5 prefers Protomaps or MapTiler,
+ * both of which bill flat rather than per map load).
+ */
+export const DEFAULT_MAP_STYLE_URL = "https://demotiles.maplibre.org/style.json";
+
 const schema = z.object({
   SUPABASE_URL: z.string().url(),
   SUPABASE_ANON_KEY: z.string().min(1),
+  MAP_STYLE_URL: z.string().url().optional(),
 });
 
 export interface Env {
   supabaseUrl: string;
   supabaseAnonKey: string;
+  mapStyleUrl: string;
 }
 
 /** Fails loudly at boot rather than at the first request. */
@@ -20,5 +29,6 @@ export function readEnv(source: Record<string, string | undefined> = process.env
   return {
     supabaseUrl: parsed.data.SUPABASE_URL,
     supabaseAnonKey: parsed.data.SUPABASE_ANON_KEY,
+    mapStyleUrl: parsed.data.MAP_STYLE_URL ?? DEFAULT_MAP_STYLE_URL,
   };
 }

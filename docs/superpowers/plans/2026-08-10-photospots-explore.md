@@ -1926,11 +1926,16 @@ MAP_STYLE_URL=
 
 - [ ] **Step 6: Write the route**
 
+Two React Router v8 details this depends on. Loaders return `data(obj, { headers })` from
+`react-router`, not `Response.json` — a raw `Response` is not type-inferable, so `loaderData` falls
+back to `unknown` and `meta()` cannot read it. And in `meta()` the property is **`loaderData`**, not
+`data`; it is optional on any route with an `ErrorBoundary`, since meta also runs for the error case.
+
 Replace the contents of `app/routes/home.tsx`:
 
 ```tsx
 import { useCallback, useMemo, useState } from "react";
-import { Form, Link, useSearchParams } from "react-router";
+import { Form, Link, useSearchParams, data as routeData } from "react-router";
 import { createSupabaseServerClient } from "~/lib/supabase.server";
 import { readEnv } from "~/lib/env.server";
 import { getCurrentProfile } from "~/data/profiles";
@@ -1973,7 +1978,7 @@ export async function loader({ request }: Route.LoaderArgs) {
     supabase.from("shoot_types").select("id, slug, label").order("sort_order"),
   ]);
 
-  return Response.json(
+  return routeData(
     {
       profile,
       spots,
@@ -1986,18 +1991,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   );
 }
 
-interface LoaderData {
-  profile: { displayName: string } | null;
-  spots: SpotSummary[];
-  shootTypes: { id: number; slug: string; label: string }[];
-  filters: ExploreFilters;
-  supabaseUrl: string;
-  mapStyleUrl: string;
-}
-
 export default function Explore({ loaderData }: Route.ComponentProps) {
-  const { profile, spots, shootTypes, filters, supabaseUrl, mapStyleUrl } =
-    loaderData as LoaderData;
+  const { profile, spots, shootTypes, filters, supabaseUrl, mapStyleUrl } = loaderData;
   const [, setSearchParams] = useSearchParams();
   const [hovered, setHovered] = useState<string | null>(null);
 
@@ -2152,14 +2147,18 @@ export default [
 Create `app/routes/spots.$slug.tsx`:
 
 ```tsx
-import { Link } from "react-router";
+// `data()` rather than Response.json: it carries headers AND keeps the loader
+// return type inferable, which is what makes `data` available in meta().
+import { Link, data as routeData } from "react-router";
 import { createSupabaseServerClient } from "~/lib/supabase.server";
 import { readEnv } from "~/lib/env.server";
 import { getSpotBySlug, type SpotDetail } from "~/data/spots";
 import type { Route } from "./+types/spots.$slug";
 
-export function meta({ data }: Route.MetaArgs) {
-  const spot = (data as { spot?: SpotDetail } | undefined)?.spot;
+// `loaderData`, not `data` — renamed in React Router v8. It is optional here
+// because this route has an ErrorBoundary, so meta() also runs for the 404.
+export function meta({ loaderData }: Route.MetaArgs) {
+  const spot = loaderData?.spot;
   return [{ title: spot ? `${spot.name} — Photospots` : "Spot not found — Photospots" }];
 }
 
@@ -2174,7 +2173,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404, headers });
   }
 
-  return Response.json({ spot, supabaseUrl: env.supabaseUrl }, { headers });
+  return routeData({ spot, supabaseUrl: env.supabaseUrl }, { headers });
 }
 
 /** Renders only the attributes that were filled in — most are nullable by design (spec §4.7). */
@@ -2192,7 +2191,7 @@ const list = (values: string[] | null) =>
   values && values.length > 0 ? values.join(", ") : null;
 
 export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
-  const { spot } = loaderData as { spot: SpotDetail; supabaseUrl: string };
+  const { spot } = loaderData;
   const place = [spot.locality, spot.region].filter(Boolean).join(", ");
 
   return (

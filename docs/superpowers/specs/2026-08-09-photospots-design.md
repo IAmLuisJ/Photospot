@@ -145,7 +145,7 @@ cannot drift in shape, and `ALTER TABLE ADD COLUMN` is non-breaking.
 
 ## 5. Architecture
 
-**Stack:** React Router v7 (framework mode) · Supabase (Postgres + PostGIS, Auth, Storage, RLS) ·
+**Stack:** React Router v8 (framework mode) · Supabase (Postgres + PostGIS, Auth, Storage, RLS) ·
 MapLibre GL with Protomaps or MapTiler vector tiles · deployed to Vercel.
 
 Map tiles are deliberately not Google or Mapbox: both bill per map load, which is the wrong cost

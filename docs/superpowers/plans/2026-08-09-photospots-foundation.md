@@ -2,13 +2,18 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Stand up the Photospots project skeleton — React Router v7 app, Supabase database with the full schema and enforced row-level security, working authentication, and the pure domain modules for scoring and geography.
+**Goal:** Stand up the Photospots project skeleton — React Router v8 app, Supabase database with the full schema and enforced row-level security, working authentication, and the pure domain modules for scoring and geography.
 
 **Architecture:** Four layers, per spec §5. Routes are thin (loaders call queries, actions call commands). The `app/domain/` layer is pure functions with no I/O — that is where scoring weights and geographic math live, and it is unit-tested without a database. The `app/data/` layer wraps Supabase and never leaks Supabase types upward. Postgres triggers maintain dumb counters; weighted scores are computed in TypeScript.
 
-**Tech Stack:** React Router v7 (framework mode) · TypeScript · Vitest · Supabase (Postgres 17 + PostGIS, Auth, Storage, RLS) · Supabase CLI for local development
+**Tech Stack:** React Router v8 (framework mode) · TypeScript · Vitest · Supabase (Postgres 17 + PostGIS, Auth, Storage, RLS) · Supabase CLI for local development
 
 `UNIQUE NULLS NOT DISTINCT` in Task 9 requires Postgres 15 or newer. The local stack runs 17.6.
+
+**Deploying to Vercel:** `@vercel/react-router` (the SSR preset) peer-depends on `@react-router/dev@7`
+and does not yet support v8, so it cannot be added. Deployment relies on Vercel's own React Router
+framework detection instead. Verify the first deploy actually serves SSR routes rather than only
+static assets — if it does not, the options are pinning to v7 or a custom build output.
 
 **Plan sequence:** This is plan 1 of 6. Plans 2–6 cover read-only explore, contribution, signals, filters and views, and trust (spec §13).
 

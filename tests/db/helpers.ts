@@ -59,5 +59,9 @@ export async function createTestUser(displayName = "Test User"): Promise<TestUse
 }
 
 export async function deleteTestUser(id: string): Promise<void> {
-  await serviceClient().auth.admin.deleteUser(id);
+  // Throws rather than discarding the error. A silent cleanup failure degrades
+  // slowly and invisibly across six test files — and deletion genuinely can
+  // fail, e.g. if a foreign key still references the profile.
+  const { error } = await serviceClient().auth.admin.deleteUser(id);
+  if (error) throw error;
 }

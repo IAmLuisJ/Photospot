@@ -99,11 +99,36 @@ describe("spots", () => {
   // Spec §9.1: the duplicate check matches on proximity AND kind. Without the
   // kind filter, dropping an outdoor pin beside a studio would offer the studio
   // as a duplicate candidate.
-  it("does not offer a studio as a duplicate for an outdoor pin", async () => {
-    await serviceClient()
+  //
+  // Both directions live in one test deliberately. Split across two, the
+  // negative assertion passes vacuously whenever the insert fails — its
+  // correctness would depend on the *next* test proving the row exists, and on
+  // the two running in declaration order.
+  it("matches on kind as well as proximity", async () => {
+    const { error: insertError } = await serviceClient()
       .from("spots")
       .insert(newSpot({ name: "Nearby Studio", kind: "studio" }));
+    expect(insertError).toBeNull();
 
+    const at = { p_lng: -85.7267, p_lat: 42.9223, p_meters: 250 };
+    const names = (rows: unknown) => (rows as { name: string }[]).map((s) => s.name);
+
+    const outdoor = await serviceClient().rpc("spots_within_meters", {
+      ...at,
+      p_kind: "outdoor",
+    });
+    const studio = await serviceClient().rpc("spots_within_meters", {
+      ...at,
+      p_kind: "studio",
+    });
+
+    expect(outdoor.error).toBeNull();
+    expect(studio.error).toBeNull();
+    expect(names(outdoor.data)).not.toContain("Nearby Studio");
+    expect(names(studio.data)).toContain("Nearby Studio");
+  });
+
+  it("returns the distance and only the projected columns", async () => {
     const { data, error } = await serviceClient().rpc("spots_within_meters", {
       p_lng: -85.7267,
       p_lat: 42.9223,
@@ -112,18 +137,12 @@ describe("spots", () => {
     });
 
     expect(error).toBeNull();
-    expect((data as { name: string }[]).map((s) => s.name)).not.toContain("Nearby Studio");
-  });
-
-  it("finds a studio when searching for studios", async () => {
-    const { data, error } = await serviceClient().rpc("spots_within_meters", {
-      p_lng: -85.7267,
-      p_lat: 42.9223,
-      p_meters: 250,
-      p_kind: "studio",
-    });
-
-    expect(error).toBeNull();
-    expect((data as { name: string }[]).map((s) => s.name)).toContain("Nearby Studio");
+    const row = (data as Record<string, unknown>[])[0];
+    expect(Object.keys(row).sort()).toEqual(
+      ["distance_meters", "id", "kind", "locality", "name", "region", "slug"].sort(),
+    );
+    // ~100 m north of the seeded spots.
+    expect(row.distance_meters as number).toBeGreaterThan(50);
+    expect(row.distance_meters as number).toBeLessThan(150);
   });
 });

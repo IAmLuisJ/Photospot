@@ -123,6 +123,17 @@ These are distinct sort orders and are named distinctly in the UI.
   owner. Wiki-style open editing is not needed yet.
 - Duplicates are prevented at submission time rather than merged later (see §9.1).
 
+### 4.6a Account deletion
+
+A user can delete their account, and doing so must not destroy other people's work. Deleting an
+account removes the auth user and cascades to their profile; **content they contributed survives
+with an anonymous author** (`created_by` and `owner_profile_id` become null). Photo attribution
+follows the same rule.
+
+The alternatives are both worse: cascading would delete spots that other photographers have since
+photographed, commented on, and voted for, and blocking deletion — which is what a plain foreign key
+does by default — makes account deletion impossible for exactly the users who contributed most.
+
 ### 4.7 Optional metadata
 
 Most spot attributes are nullable. The filter set will change based on user feedback, so the
@@ -184,7 +195,7 @@ changes, which keeps the fiddliest piece swappable and independently testable.
 `website_url?` · `instagram?`
 
 ### `spots`
-`id` · `kind` (outdoor | studio) · `name` · `slug` · `description` ·
+`id` · `kind` (outdoor | studio) · `name` · **`slug`** · `description` ·
 `location` `geography(Point, 4326)` with a GIST index · `locality` (city) · `region` (US state) ·
 `created_by` → profiles · `owner_profile_id?` → profiles ·
 `status` (published | hidden | removed) · `score` · `hot_score` · trigger-maintained `*_count`
@@ -341,6 +352,12 @@ single reports queue with hide and remove actions.
    routes the user to adding a photo or comment on the existing spot. The user contributes either way.
 3. **Short form** — name, pin, at least one shoot type, at least one photo. All other attributes are
    optional and collapsed behind "add details."
+
+   **Slugs are globally unique**, because `/spots/:slug` is a flat URL space. Scoping uniqueness to
+   locality is not viable — `locality` and `region` are both nullable. So the submission flow
+   generates one: slugify the name, and on collision append the slugified locality, then a short
+   discriminator. "Millennium Park" will genuinely recur across cities, so this path is normal, not
+   exceptional.
 4. **Photos** upload direct-to-Storage via signed URL, downscaled client-side first. Scouting or
    session is chosen per photo; session photos require the rights attestation and offer credit fields.
 5. **Publishes immediately** — live, reportable, editable by submitter and admin.

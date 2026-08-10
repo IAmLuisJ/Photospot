@@ -13,13 +13,18 @@ create table public.spots (
   location geography(Point, 4326) not null,
   locality text,
   region text,
-  created_by uuid not null references public.profiles (id),
-  owner_profile_id uuid references public.profiles (id),
+  -- Nullable with ON DELETE SET NULL so a contributor can delete their account.
+  -- NO ACTION here made account deletion impossible for exactly the users who
+  -- contributed most: the auth.users -> profiles cascade hits this FK and aborts.
+  -- Cascading instead would destroy spots other people have photographed and
+  -- commented on, so the spot survives with an anonymous author (spec §4.8).
+  created_by uuid references public.profiles (id) on delete set null,
+  owner_profile_id uuid references public.profiles (id) on delete set null,
   status public.spot_status not null default 'published',
 
   -- Derived. Never edited by hand: see scripts/backfill-scores.ts.
-  score numeric not null default 0,
-  hot_score numeric not null default 0,
+  score numeric(12,3) not null default 0,
+  hot_score numeric(12,3) not null default 0,
 
   -- Trigger-maintained counters. Weighting happens in TypeScript.
   shoot_type_upvote_count integer not null default 0,
@@ -50,8 +55,9 @@ create table public.spots (
 create index spots_location_idx  on public.spots using gist (location);
 create index spots_score_idx     on public.spots (score desc);
 create index spots_hot_score_idx on public.spots (hot_score desc);
-create index spots_status_idx    on public.spots (status);
-create index spots_kind_idx      on public.spots (kind);
+-- No plain index on status or kind. Benchmarked at 50k rows: status is 92%
+-- 'published' so it is never selective enough to use, and kind always arrives
+-- alongside a viewport, where it is applied as a filter on the GIST result.
 
 -- See migration 1's grant comment on public.profiles for the rationale:
 -- service_role only until task 11 adds row-level security policies.
@@ -71,8 +77,17 @@ begin
 end;
 $$;
 
+-- UPDATE OF, not bare UPDATE: the counter triggers (task 10) and the score
+-- backfill (task 15) write derived columns on every row, which would otherwise
+-- make updated_at mean "when rankings were last recomputed" — the same value
+-- table-wide — rather than when the spot was last edited.
 create trigger spots_touch_updated_at
-  before update on public.spots
+  before update of
+    name, slug, description, kind, location, locality, region, status,
+    owner_profile_id, cost_type, cost_notes, permit_url, hours_notes,
+    best_light, best_seasons, walk_minutes, parking_notes, terrain,
+    accessibility, max_group_size, dog_friendly
+  on public.spots
   for each row execute function public.touch_updated_at();
 
 -- Proximity lookup backing the duplicate check in the submission flow.
@@ -90,15 +105,34 @@ create or replace function public.spots_within_meters(
   p_meters double precision,
   p_kind public.spot_kind
 )
-returns setof public.spots
+-- An explicit projection rather than `setof public.spots`. With the table type,
+-- the RPC's public contract would silently widen every time a column is added
+-- to spots — a moderation note or internal flag would become reachable here
+-- with no change to this function and nothing to review. The duplicate prompt
+-- needs only enough to render "is it one of these?" and route a choice.
+--
+-- distance_meters is free: st_distance is already computed for the ORDER BY,
+-- and returning it lets the prompt say "40 m away" without the client
+-- recomputing it.
+returns table (
+  id uuid,
+  name text,
+  slug text,
+  kind public.spot_kind,
+  locality text,
+  region text,
+  distance_meters double precision
+)
 language sql
 stable
 set search_path = public, extensions
 as $$
-  select *
-  from public.spots
-  where status = 'published'
-    and kind = p_kind
-    and st_dwithin(location, st_point(p_lng, p_lat)::geography, p_meters)
-  order by st_distance(location, st_point(p_lng, p_lat)::geography)
+  select
+    s.id, s.name, s.slug, s.kind, s.locality, s.region,
+    st_distance(s.location, st_point(p_lng, p_lat)::geography) as distance_meters
+  from public.spots s
+  where s.status = 'published'
+    and s.kind = p_kind
+    and st_dwithin(s.location, st_point(p_lng, p_lat)::geography, p_meters)
+  order by st_distance(s.location, st_point(p_lng, p_lat)::geography)
 $$;

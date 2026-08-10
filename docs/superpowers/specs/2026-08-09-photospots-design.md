@@ -369,6 +369,14 @@ Placing the gate at step 2 rather than at review time converts a rejection into 
 Optimistic UI with rollback on failure. A unique-constraint violation from a duplicate vote is
 **treated as success**: double-clicking an upvote is a no-op, not an error toast.
 
+**Changing a vote needs an atomic RPC, not delete-then-insert.** `signals` has no UPDATE privilege
+and the unique constraint rejects a second insert, so flipping a "would you shoot here again?"
+answer means deleting the row and inserting a new one. Done from the client that is two round trips
+with no transaction: a delete that succeeds followed by an insert that fails silently discards the
+user's vote, and the optimistic UI would have already shown the new state. Whichever plan builds
+voting must expose a single `cast_signal(spot_id, kind, shoot_type_id, value)` function that does
+both inside one transaction.
+
 ### 9.3 Studio claim
 
 Email verification against the listing's `contact_email`, which sets `claimed_by` and

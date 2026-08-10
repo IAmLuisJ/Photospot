@@ -1827,7 +1827,10 @@ Create `supabase/migrations/20260809000003_contributions.sql`:
 ```sql
 create type public.signal_kind  as enum ('shoot_type_upvote', 'shoot_again');
 create type public.photo_kind   as enum ('scouting', 'session');
-create type public.photo_status as enum ('published', 'removed');
+-- Named for the concept, not its first user. photos, comments and any future
+-- moderatable table share it; calling it photo_status made `comments.status
+-- public.photo_status` read like a mistake.
+create type public.content_status as enum ('published', 'removed');
 create type public.report_status as enum ('open', 'resolved', 'dismissed');
 create type public.report_target as enum ('spot', 'photo', 'comment');
 
@@ -1874,6 +1877,9 @@ create table public.signals (
 );
 
 create index signals_spot_idx on public.signals (spot_id);
+-- The hot-score refresh (spec §7) scans a trailing 90-day window across all
+-- spots, so it needs created_at leading, not spot_id.
+create index signals_recent_idx on public.signals (created_at desc);
 
 -- select, insert, delete only: signals_one_per_user has no legitimate use for
 -- update, by design (see the comment on that constraint) — changing a vote is
@@ -1900,7 +1906,7 @@ create table public.photos (
   width integer,
   height integer,
   blurhash text,
-  status public.photo_status not null default 'published',
+  status public.content_status not null default 'published',
   created_at timestamptz not null default now(),
 
   -- Spec §4.3: session photos show identifiable people and cannot be
@@ -1910,6 +1916,7 @@ create table public.photos (
 );
 
 create index photos_spot_idx on public.photos (spot_id, kind);
+create index photos_recent_idx on public.photos (created_at desc);
 
 grant select, insert, update, delete on public.photos to service_role;
 alter table public.photos enable row level security;
@@ -1939,11 +1946,12 @@ create table public.comments (
   -- account should not delete the comment out from under that context.
   profile_id uuid references public.profiles (id) on delete set null,
   body text not null check (length(trim(body)) > 0),
-  status public.photo_status not null default 'published',
+  status public.content_status not null default 'published',
   created_at timestamptz not null default now()
 );
 
 create index comments_spot_idx on public.comments (spot_id, created_at desc);
+create index comments_recent_idx on public.comments (created_at desc);
 
 grant select, insert, update, delete on public.comments to service_role;
 alter table public.comments enable row level security;
@@ -1960,7 +1968,9 @@ create table public.studio_details (
   -- rather than blocking the deletion or dragging the listing's business
   -- details (hourly_rate_cents, booking_url, contact_email) down with it.
   claimed_by uuid references public.profiles (id) on delete set null,
-  claimed_at timestamptz
+  claimed_at timestamptz,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
 );
 
 grant select, insert, update, delete on public.studio_details to service_role;

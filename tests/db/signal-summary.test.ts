@@ -48,6 +48,14 @@ beforeAll(async () => {
   // newest id (so it sorts last by id), the lowest sort_order (so it sorts
   // first by sort_order) and a label that sorts last alphabetically — which
   // makes `order by id`, `order by label` and a missing ORDER BY all visible.
+  //
+  // Note the cost: shoot_types is global reference data, so while this row
+  // exists the seeded set has ten types rather than nine, and two other files
+  // assert on that count. This file is therefore safe only because the db
+  // project sets `fileParallelism: false`. helpers.ts deliberately refuses to
+  // lean on that flag for user uniqueness; this fixture cannot avoid it, so
+  // the dependency is stated rather than left implicit — and afterAll throws
+  // if the cleanup that ends it ever fails.
   const { data: probe, error: probeError } = await admin
     .from("shoot_types")
     .insert({ slug: "zz-order-probe", label: "Zulu Probe", sort_order: 5 })
@@ -67,10 +75,22 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  const admin = serviceClient();
+
   // The spot goes first: spot_shoot_types cascades from it, and those rows
   // reference the probe type, which cannot be deleted while they exist.
-  await serviceClient().from("spots").delete().eq("id", spotId);
-  await serviceClient().from("shoot_types").delete().eq("id", probeId);
+  const { error: spotError } = await admin.from("spots").delete().eq("id", spotId);
+  if (spotError) throw spotError;
+
+  // Thrown rather than discarded, for the reason deleteTestUser gives in
+  // helpers.ts — and more sharply here, because the damage lands in another
+  // file. The probe is a row in shoot_types, which is global reference data:
+  // leaking it makes schema-profiles.test.ts and rls.test.ts fail on their
+  // count of the nine seeded categories, in code with no connection to this
+  // change. A silent failure here would be diagnosed in the wrong file.
+  const { error: probeError } = await admin.from("shoot_types").delete().eq("id", probeId);
+  if (probeError) throw probeError;
+
   await deleteTestUser(voter.id);
   await deleteTestUser(other.id);
 });

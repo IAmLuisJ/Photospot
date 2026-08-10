@@ -136,6 +136,14 @@ beforeAll(async () => {
   // newest id (so it sorts last by id), the lowest sort_order (so it sorts
   // first by sort_order) and a label that sorts last alphabetically — which
   // makes `order by id`, `order by label` and a missing ORDER BY all visible.
+  //
+  // Note the cost: shoot_types is global reference data, so while this row
+  // exists the seeded set has ten types rather than nine, and two other files
+  // assert on that count. This file is therefore safe only because the db
+  // project sets `fileParallelism: false`. helpers.ts deliberately refuses to
+  // lean on that flag for user uniqueness; this fixture cannot avoid it, so
+  // the dependency is stated rather than left implicit — and afterAll throws
+  // if the cleanup that ends it ever fails.
   const { data: probe, error: probeError } = await admin
     .from("shoot_types")
     .insert({ slug: "zz-order-probe", label: "Zulu Probe", sort_order: 5 })
@@ -155,10 +163,22 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  const admin = serviceClient();
+
   // The spot goes first: spot_shoot_types cascades from it, and those rows
   // reference the probe type, which cannot be deleted while they exist.
-  await serviceClient().from("spots").delete().eq("id", spotId);
-  await serviceClient().from("shoot_types").delete().eq("id", probeId);
+  const { error: spotError } = await admin.from("spots").delete().eq("id", spotId);
+  if (spotError) throw spotError;
+
+  // Thrown rather than discarded, for the reason deleteTestUser gives in
+  // helpers.ts — and more sharply here, because the damage lands in another
+  // file. The probe is a row in shoot_types, which is global reference data:
+  // leaking it makes schema-profiles.test.ts and rls.test.ts fail on their
+  // count of the nine seeded categories, in code with no connection to this
+  // change. A silent failure here would be diagnosed in the wrong file.
+  const { error: probeError } = await admin.from("shoot_types").delete().eq("id", probeId);
+  if (probeError) throw probeError;
+
   await deleteTestUser(voter.id);
   await deleteTestUser(other.id);
 });
@@ -467,6 +487,9 @@ Each row below is one temporary edit to the migration, followed by `npx supabase
 | 4 | `order by t.sort_order, t.id` → `order by t.sort_order desc` | orders by sort_order |
 | 5 | delete the `exists (… sp.status = 'published')` guard | returns nothing for a spot RLS hides… |
 | 6 | delete `v.upvote_count > 0 or` from the union | keeps a shoot type that still carries votes after it is untagged |
+| 7 | drop the parentheses: `where exists (…status…) and v.upvote_count > 0 or exists (…tagged…)` | returns nothing for a spot RLS hides… |
+
+Row 7 is the reason the guard is written with parentheses at all. `and` binds tighter than `or`, so the unparenthesised form lets the tagged-types branch satisfy the `where` on its own and the status filter never applies — which is why the hidden-spot fixture is both tagged and voted on.
 
 Rows 1–3 are the point of the probe shoot type. Against the seeded rows alone all three of those mutations pass every assertion, because the seed sets `sort_order = id * 10` and id order, sort_order order and label order all coincide — a test that only checks `sort_order` is non-decreasing catches nothing but a full reversal (row 4). If any mutation here leaves the suite green, the test is not guarding what it claims and must be fixed before continuing.
 
@@ -485,6 +508,16 @@ The result set unions the spot's tagged shoot types with any type that already
 carries votes on it. Shoot types are editable, so a type can be untagged after
 people have voted; listing only the tagged ones would drop those votes from the
 breakdown while the total counter kept counting them.
+
+status is filtered explicitly inside the function. It never selects from
+public.spots, so spots_read never runs on it, and both sibling RPCs in the
+explore migration filter status the same way for the same reason. The union is
+parenthesised so the tagged-types branch cannot bypass that filter.
+
+service_role gains insert/delete on shoot_types — reference data, and the one
+table where it held select alone. Without it no test can make sort_order and id
+disagree, because the seed sets sort_order = id * 10, and an ordering assertion
+over the seeded rows alone cannot tell a correct ORDER BY from a missing one.
 
 Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 EOF

@@ -25,6 +25,7 @@
     "@supabase/ssr": "^0.12.4",
     "@supabase/supabase-js": "^2.112.2",
     "isbot": "^5.1.36",
+    "maplibre-gl": "^6.2.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "react-router": "^8",

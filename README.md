@@ -15,15 +15,15 @@ Grand-Rapids-specific.
 
 ## Status
 
-**In development — the foundation is being built task by task.** Not yet deployed, and there is no
-UI to look at.
+**The foundation is complete.** Schema, authorization, and auth all work and are covered by 110
+tests. There is not yet a map or any real UI — that is the next plan.
 
 | | |
 | --- | --- |
 | ✅ Pure domain layer | Scoring, time decay, geography — 38 tests, no database |
-| ✅ Database foundation | Profiles, shoot types, auth trigger, RLS test harness |
-| 🔨 In progress | Spots schema, contribution tables, counters, row-level security |
-| ⬜ Next | Supabase client, auth routes, score backfill |
+| ✅ Database | Full schema, counter triggers, row-level security — 72 tests |
+| ✅ Auth | Google and email magic link, verified end to end |
+| ⬜ Next | The map itself: viewport queries, spot pages, submission |
 
 Design and implementation plan live in [`docs/superpowers/`](docs/superpowers/).
 
@@ -79,15 +79,18 @@ land — at `http://127.0.0.1:54324`.
 | `npm run typecheck` | TypeScript |
 | `npm run build` | Production build |
 | `npx supabase db reset` | Replay all migrations from empty |
+| `npm run backfill:scores` | Recompute scores after changing weights |
 
 ## Layout
 
 ```
 app/domain/    pure functions, no I/O — scoring and geography live here
+app/data/      Supabase queries; database types do not escape this directory
+app/lib/       env validation and the per-request Supabase client
 app/routes/    thin loaders and actions
 supabase/      migrations: schema, triggers, row-level security
+scripts/       backfill-scores.ts
 tests/db/      integration and RLS tests against local Supabase
-app/data/      (planned) Supabase queries; database types won't escape here
 ```
 
 The organising rule: **every rule worth testing lives in a pure function that never touches a
@@ -102,11 +105,11 @@ and no Docker.
 edges without fixtures.
 
 **Scoring weights are configuration**, in `app/domain/scoring/weights.ts`. They are deliberately
-tunable, which is why score is stored rather than computed on read — changing them will require a
-backfill run to recompute every stored score.
+tunable, which is why score is stored rather than computed on read. Changing them requires running
+`npm run backfill:scores`.
 
-**Database types will stay in `app/data/`.** The domain layer defines its own shapes; mapping
-functions belong in the data layer, pointing inward.
+**Database types stay in `app/data/`.** The domain layer defines its own shapes; mapping functions
+live in the data layer and point inward.
 
 **Authorization lives in the database.** Row-level security carries the rules rather than
 application `if` statements. Two things that are easy to get wrong and are documented in the

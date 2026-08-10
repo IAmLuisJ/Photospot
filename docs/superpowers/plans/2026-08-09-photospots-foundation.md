@@ -3837,14 +3837,23 @@ git commit -m "docs: add README with setup and project layout"
 
 ## Done when
 
-- `npm test` passes: 4 domain test files with no database dependency, plus 6 database test files
+All verified against a database reset from empty:
+
+- `npm test` passes — 110 tests across 14 files (45 unit with no database dependency, 65 db)
+- `npm run test:unit` runs in ~120 ms with no Docker
 - `npm run typecheck` and `npm run build` are clean
-- Signing in with a magic link works locally end to end, and signing out works
-- `npx supabase db reset` replays every migration from empty
-- A second `shoot_again` vote from the same user is rejected with error code `23505`
+- `npx supabase db reset` replays all five migrations from empty
+- Signing in with a magic link works end to end, and signing out clears the session
+- A second `shoot_again` vote from the same user is rejected with `23505`
 - A logged-out visitor can read `shoot_types` — proving the base grants exist, since without them
   every RLS test would fail with `42501` rather than exercising a policy
+- A logged-out visitor writing to `comments` gets `42501`
+- Writing `spots.score` as an app role gets `42501`
 - A user cannot promote themselves by setting `profiles.role` to `admin`
+- A studio can be claimed only by someone whose confirmed email matches the listing contact, and a
+  claimed listing cannot be re-claimed
+- A contributor can delete their account; their spots survive with a null author and their votes
+  cascade away
 
 ## Not in this plan
 

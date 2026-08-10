@@ -12,9 +12,11 @@ describe("validateComment", () => {
     expect(errors[0].field).toBe("body");
   });
 
-  // The database has `check (length(trim(body)) > 0)`, so whitespace-only text
-  // fails there too — but as a 23514 the user never sees explained.
-  it("rejects whitespace-only text, matching the database check", () => {
+  // JS `.trim()` strips all Unicode whitespace, which is stricter than the
+  // database's `trim()` (Postgres strips spaces only, so `"\n\t"` alone
+  // passes the database's check). This is testing that property of this
+  // function, not parity with the database — see comment.ts for the gap.
+  it("rejects text that is whitespace only, including tabs and newlines", () => {
     expect(validateComment("   \n\t ").errors).toHaveLength(1);
   });
 
@@ -22,8 +24,11 @@ describe("validateComment", () => {
     expect(validateComment("x".repeat(MAX_COMMENT_LENGTH)).errors).toEqual([]);
   });
 
-  it("rejects one character past the limit", () => {
-    expect(validateComment("x".repeat(MAX_COMMENT_LENGTH + 1)).errors).toHaveLength(1);
+  it("rejects one character past the limit, on the body field", () => {
+    expect(validateComment("x".repeat(MAX_COMMENT_LENGTH + 1)).errors).toContainEqual({
+      field: "body",
+      message: expect.any(String),
+    });
   });
 
   // The trim is what the data layer will store, so the limit has to be measured

@@ -1274,7 +1274,49 @@ EOF
 
 **Files:**
 - Create: `app/data/comments.ts`
+- Create: `supabase/migrations/20260810000010_comment_constraints.sql`
 - Test: `tests/db/comments-data.test.ts`
+
+**Widened scope (recorded during Task 2's review, not yet implemented):** `MAX_COMMENT_LENGTH`
+in `app/domain/comments/comment.ts` is a product limit enforced only in a layer any client can
+skip — `body` is currently unconstrained `text`, so a direct PostgREST insert can store up to 1GB
+in a column every visitor to that spot then downloads. Separately, `comment.ts`'s
+`validateComment` rejects on JS `.trim()`, which strips all Unicode whitespace, while the
+database's `check (length(trim(body)) > 0)` uses Postgres `trim()`, which strips **only spaces**
+(it is `btrim(body, ' ')`). Confirmed against the live local database during Task 2's review:
+`"   "` (spaces only) is rejected with `23514`, but `"\n\t"`, `"   \n\t "`, and `" "` (U+00A0,
+non-breaking space) are all **accepted** — a signed-in user can POST a blank-looking comment
+straight to PostgREST (bypassing
+this domain function entirely) and it will store and count toward `comment_count`, which feeds
+`computeScore`.
+
+The repo already resolved the identical question for photo caps: `MAX_PHOTOS_PER_KIND` is
+duplicated into `enforce_photo_cap()` (`20260810000008_contribution.sql:33`) as a trigger below
+the command layer, "so it holds for anything that reaches the table — the API directly, a future
+import script, a careless migration." Apply the same resolution here — two numbers with two
+different jobs, a generous hard ceiling in the schema as an abuse guard plus the tunable product
+limit in TypeScript — rather than trying to make one number do both jobs:
+
+- [ ] Replace the `comments_body` check with a whitespace-class test —
+  `check (body ~ '[^[:space:]]')`, "contains at least one non-whitespace character," which is what
+  `.trim().length > 0` actually means. POSIX `[:space:]` covers space, tab, newline, CR, FF, VT but
+  **not** U+00A0, so a residual gap remains after this change too; document that rather than
+  claiming parity with the TypeScript check. Whether a variant (e.g. adding ` ` to the
+  excluded class) closes that residual gap needs to be tested against a running Postgres before
+  it's written down as the answer — don't assume a regex snippet works from reasoning about it;
+  confirm it, then record what was actually confirmed.
+- [ ] Add `check (length(body) <= 10000)` as the abuse ceiling, with a migration comment
+  explaining the two-numbers split, and noting that Postgres `length()` counts code points while
+  JS `.length` counts UTF-16 units — the two limits must never be set equal, since a codepoint
+  above the BMP would make the JS-side count exceed the Postgres-side count for the same string.
+- [ ] Extend `tests/db/comments-data.test.ts`: the existing "refuses an empty body at the
+  database" test should also assert `23514` for `"\n\t"` (not just spaces), and a new test should
+  assert the 10000-codepoint ceiling rejects an over-long body.
+- [ ] Once this migration lands, update the doc comment on `validateComment` in
+  `app/domain/comments/comment.ts` — it currently says (accurately, as of Task 2) that this
+  function is deliberately stricter than the database check and that the gap is tracked here.
+  That wording will be stale once the whitespace-class and ceiling checks land, and needs to be
+  rewritten to describe the new database behavior rather than left describing the old one.
 
 - [ ] **Step 1: Verify the embedded-author shape against the running database**
 

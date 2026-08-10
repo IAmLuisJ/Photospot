@@ -2074,7 +2074,7 @@ beforeAll(async () => {
     .single();
   spotId = spot!.id;
 
-  const { data: types } = await db.from("shoot_types").select("id, slug").eq("slug", "family");
+  const { data: types } = await db.from("shoot_types").select("id").eq("slug", "family");
   familyTypeId = types![0].id;
 });
 
@@ -2150,6 +2150,69 @@ describe("counter triggers", () => {
     await serviceClient().from("comments").update({ status: "removed" }).eq("spot_id", spotId);
     expect((await counters()).comment_count).toBe(0);
   });
+
+  it("stops counting a removed photo", async () => {
+    await serviceClient().from("photos").update({ status: "removed" }).eq("spot_id", spotId);
+    const c = await counters();
+    expect(c.scouting_photo_count).toBe(0);
+    expect(c.session_photo_count).toBe(0);
+  });
+
+  // A recount reads the source tables, so it must not be fooled by rows that
+  // belong to a different spot. Without a spot_id filter in recount_spot this
+  // would report the global total.
+  it("counts only its own spot's rows", async () => {
+    const db = serviceClient();
+    const { data: other } = await db
+      .from("spots")
+      .insert({
+        kind: "outdoor",
+        name: "Other Spot",
+        slug: `counter-other-${Date.now()}`,
+        location: "POINT(-85.6 42.8)",
+        created_by: userId,
+      })
+      .select("id")
+      .single();
+
+    await db
+      .from("comments")
+      .insert({ spot_id: other!.id, profile_id: userId, body: "Belongs elsewhere." });
+
+    expect((await counters()).comment_count).toBe(0);
+    const { data: otherCounts } = await db
+      .from("spots")
+      .select("comment_count")
+      .eq("id", other!.id)
+      .single();
+    expect(otherCounts!.comment_count).toBe(1);
+
+    await db.from("spots").delete().eq("id", other!.id);
+  });
+
+  // Deleting a spot cascades to signals/comments/photos, which fires the
+  // recount trigger for a row that no longer exists. It must not error.
+  it("survives the cascade when its spot is deleted", async () => {
+    const db = serviceClient();
+    const { data: doomed } = await db
+      .from("spots")
+      .insert({
+        kind: "outdoor",
+        name: "Doomed Spot",
+        slug: `counter-doomed-${Date.now()}`,
+        location: "POINT(-85.5 42.7)",
+        created_by: userId,
+      })
+      .select("id")
+      .single();
+
+    await db
+      .from("comments")
+      .insert({ spot_id: doomed!.id, profile_id: userId, body: "About to vanish." });
+
+    const { error } = await db.from("spots").delete().eq("id", doomed!.id);
+    expect(error).toBeNull();
+  });
 });
 ```
 
@@ -2163,16 +2226,22 @@ Expected: FAIL — counters stay at 0 after inserts
 Create `supabase/migrations/20260809000004_counters.sql`:
 
 ```sql
--- Full recount rather than incremental deltas: at this scale the cost is
--- irrelevant and it cannot drift out of sync the way +1/-1 arithmetic can.
--- SECURITY DEFINER so it still works once task 11 revokes UPDATE on the
--- counter columns from application roles. A plain function would run with
--- the caller's rights and be blocked by those grants.
+-- Full recount rather than incremental +1/-1 deltas. At this scale the cost is
+-- irrelevant, and a recount cannot drift: incremental arithmetic goes wrong
+-- silently on a missed edge case (a status flip, a cascade, a multi-row
+-- statement) and the numbers are already wrong by the time anyone notices.
+--
+-- SECURITY DEFINER because task 11 revokes UPDATE on the counter columns from
+-- application roles. A plain function would run with the caller's rights and be
+-- blocked by those grants.
+--
+-- search_path pinned to '' — every reference below is schema-qualified, and
+-- pg_temp is otherwise searched ahead of public for relation names.
 create or replace function public.recount_spot(p_spot_id uuid)
 returns void
 language sql
 security definer
-set search_path = public
+set search_path = ''
 as $$
   update public.spots s set
     shoot_type_upvote_count = (
@@ -2202,27 +2271,78 @@ as $$
   where s.id = p_spot_id;
 $$;
 
-create or replace function public.trg_recount_spot()
+-- Statement-level with a transition table, not FOR EACH ROW: a single statement
+-- touching N rows of one spot would otherwise recount N times, and bulk cleanup
+-- (or the cascade when a spot is deleted) would multiply that across the table.
+-- Recounting each affected spot once per statement is both correct and cheaper.
+create or replace function public.trg_recount_spots()
 returns trigger
 language plpgsql
+security definer
+set search_path = ''
 as $$
 begin
-  perform public.recount_spot(coalesce(new.spot_id, old.spot_id));
+  perform public.recount_spot(spot_id)
+  from (
+    select spot_id from changed_rows
+    union
+    select spot_id from changed_rows
+  ) affected
+  group by spot_id;
   return null;
 end;
 $$;
 
-create trigger signals_recount
-  after insert or update or delete on public.signals
-  for each row execute function public.trg_recount_spot();
+-- Separate insert/update/delete triggers because a transition table can only
+-- reference NEW rows on insert and OLD rows on delete; update needs both, since
+-- a status flip changes which spot's counts are stale only for that same spot.
+create or replace function public.trg_recount_spots_upd()
+returns trigger
+language plpgsql
+security definer
+set search_path = ''
+as $$
+begin
+  perform public.recount_spot(spot_id)
+  from (
+    select spot_id from old_rows
+    union
+    select spot_id from new_rows
+  ) affected
+  group by spot_id;
+  return null;
+end;
+$$;
 
-create trigger comments_recount
-  after insert or update or delete on public.comments
-  for each row execute function public.trg_recount_spot();
+create trigger signals_recount_ins after insert on public.signals
+  referencing new table as changed_rows
+  for each statement execute function public.trg_recount_spots();
+create trigger signals_recount_del after delete on public.signals
+  referencing old table as changed_rows
+  for each statement execute function public.trg_recount_spots();
+create trigger signals_recount_upd after update on public.signals
+  referencing old table as old_rows new table as new_rows
+  for each statement execute function public.trg_recount_spots_upd();
 
-create trigger photos_recount
-  after insert or update or delete on public.photos
-  for each row execute function public.trg_recount_spot();
+create trigger comments_recount_ins after insert on public.comments
+  referencing new table as changed_rows
+  for each statement execute function public.trg_recount_spots();
+create trigger comments_recount_del after delete on public.comments
+  referencing old table as changed_rows
+  for each statement execute function public.trg_recount_spots();
+create trigger comments_recount_upd after update on public.comments
+  referencing old table as old_rows new table as new_rows
+  for each statement execute function public.trg_recount_spots_upd();
+
+create trigger photos_recount_ins after insert on public.photos
+  referencing new table as changed_rows
+  for each statement execute function public.trg_recount_spots();
+create trigger photos_recount_del after delete on public.photos
+  referencing old table as changed_rows
+  for each statement execute function public.trg_recount_spots();
+create trigger photos_recount_upd after update on public.photos
+  referencing old table as old_rows new table as new_rows
+  for each statement execute function public.trg_recount_spots_upd();
 ```
 
 - [ ] **Step 4: Apply the migration**
@@ -2236,7 +2356,7 @@ Expected: success.
 - [ ] **Step 5: Run the test to verify it passes**
 
 Run: `npx vitest run tests/db/counters.test.ts`
-Expected: PASS — 7 tests
+Expected: PASS — 10 tests
 
 - [ ] **Step 6: Commit**
 

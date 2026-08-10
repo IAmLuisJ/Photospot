@@ -1,7 +1,4 @@
 node_modules/
-.env
-.env.*
-!.env.example
 build/
 dist/
 coverage/
@@ -11,3 +8,10 @@ coverage/
 
 # Brainstorming session mockups (superpowers visual companion)
 .superpowers/
+
+# Vercel link config and the token it downloads
+.vercel
+
+# All env files EXCEPT the committed template
+.env*
+!.env.example

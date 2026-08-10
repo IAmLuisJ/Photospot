@@ -3,7 +3,9 @@
 import { Link, data as routeData } from "react-router";
 import { createSupabaseServerClient } from "~/lib/supabase.server";
 import { readEnv } from "~/lib/env.server";
-import { getSpotBySlug, type SpotDetail } from "~/data/spots";
+import { getSpotBySlug, getSpotMedia, type SpotDetail } from "~/data/spots";
+import { photoUrl } from "~/lib/photo-url";
+import { getCurrentProfile } from "~/data/profiles";
 import type { Route } from "./+types/spots.$slug";
 
 // `loaderData`, not `data` — renamed in React Router v8. It is optional here
@@ -24,7 +26,12 @@ export async function loader({ request, params }: Route.LoaderArgs) {
     throw new Response("Not found", { status: 404, headers });
   }
 
-  return routeData({ spot, supabaseUrl: env.supabaseUrl }, { headers });
+  const [media, profile] = await Promise.all([
+    getSpotMedia(supabase, spot.id),
+    getCurrentProfile(supabase),
+  ]);
+
+  return routeData({ spot, media, profile, supabaseUrl: env.supabaseUrl }, { headers });
 }
 
 /** Renders only the attributes that were filled in — most are nullable by design (spec §4.7). */
@@ -42,7 +49,7 @@ const list = (values: string[] | null) =>
   values && values.length > 0 ? values.join(", ") : null;
 
 export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
-  const { spot } = loaderData;
+  const { spot, media, profile, supabaseUrl } = loaderData;
   const place = [spot.locality, spot.region].filter(Boolean).join(", ");
 
   return (
@@ -91,9 +98,49 @@ export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
         </p>
       )}
 
-      <p className="spot-detail__pending">
-        Photos, comments and voting arrive in the next milestone.
-      </p>
+      {media.photos.length > 0 && (
+        <section className="spot-detail__photos">
+          <h2>Photos</h2>
+          <ul>
+            {media.photos.map((p) => (
+              <li key={p.id}>
+                <img
+                  src={photoUrl(supabaseUrl, p.storagePath) ?? ""}
+                  alt={p.caption ?? ""}
+                  loading="lazy"
+                />
+                <p>
+                  {p.kind === "session" ? "Session" : "Scouting"}
+                  {p.creditName && <> · {p.creditName}</>}
+                </p>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {media.galleryLinks.length > 0 && (
+        <section>
+          <h2>Full galleries</h2>
+          <ul>
+            {media.galleryLinks.map((l) => (
+              <li key={l.id}>
+                <a href={l.url} target="_blank" rel="noreferrer noopener">
+                  {l.title}
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {profile && (
+        <p>
+          <Link to={`/spots/${spot.slug}/edit`}>Edit this spot</Link>
+        </p>
+      )}
+
+      <p className="spot-detail__pending">Comments and voting arrive in the next milestone.</p>
     </main>
   );
 }

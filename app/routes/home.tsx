@@ -154,6 +154,13 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
         </button>
       </div>
 
+      <Link
+        className="explore__add"
+        to={`/submit?lat=${((filters.viewport.north + filters.viewport.south) / 2).toFixed(6)}&lng=${((filters.viewport.east + filters.viewport.west) / 2).toFixed(6)}`}
+      >
+        Add a spot here
+      </Link>
+
       <div className="explore__account">
         {profile ? (
           <Form method="post" action="/auth/logout">

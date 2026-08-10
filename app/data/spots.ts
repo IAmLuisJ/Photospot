@@ -153,3 +153,66 @@ export async function getSpotBySlug(
     dogFriendly: row.dog_friendly,
   };
 }
+
+export interface SpotPhoto {
+  id: string;
+  storagePath: string;
+  kind: "scouting" | "session";
+  caption: string | null;
+  creditName: string | null;
+  creditUrl: string | null;
+}
+
+export interface SpotGalleryLink {
+  id: string;
+  url: string;
+  title: string;
+}
+
+export interface SpotMedia {
+  photos: SpotPhoto[];
+  galleryLinks: SpotGalleryLink[];
+}
+
+/**
+ * `status = 'published'` is written explicitly even though RLS enforces it —
+ * the RLS predicate is a disjunction and would leave a partial index unused.
+ */
+export async function getSpotMedia(
+  supabase: SupabaseClient,
+  spotId: string,
+): Promise<SpotMedia> {
+  const [photos, links] = await Promise.all([
+    supabase
+      .from("photos")
+      .select("id, storage_path, kind, caption, credit_name, credit_url")
+      .eq("spot_id", spotId)
+      .eq("status", "published")
+      .order("kind", { ascending: false })
+      .order("created_at", { ascending: true }),
+    supabase
+      .from("spot_gallery_links")
+      .select("id, url, title")
+      .eq("spot_id", spotId)
+      .order("created_at", { ascending: true }),
+  ]);
+
+  if (photos.error) throw photos.error;
+  if (links.error) throw links.error;
+
+  return {
+    photos: (photos.data ?? []).map((p) => ({
+      id: p.id as string,
+      storagePath: p.storage_path as string,
+      kind: p.kind as "scouting" | "session",
+      caption: p.caption as string | null,
+      creditName: p.credit_name as string | null,
+      creditUrl: p.credit_url as string | null,
+    })),
+    galleryLinks: (links.data ?? []).map((l) => ({
+      id: l.id as string,
+      url: l.url as string,
+      title: l.title as string,
+    })),
+  };
+}

@@ -1191,19 +1191,34 @@ export async function seed(supabase: SupabaseClient): Promise<number> {
       .single();
     if (error) throw error;
 
-    await supabase.from("spot_shoot_types").insert(
+    const { error: linkError } = await supabase.from("spot_shoot_types").insert(
       s.shootTypes
-        .filter((slug) => typeId.has(slug))
-        .map((slug) => ({ spot_id: spot!.id, shoot_type_id: typeId.get(slug)! })),
+        .filter((t) => typeId.has(t))
+        .map((t) => ({ spot_id: spot!.id, shoot_type_id: typeId.get(t)! })),
     );
+    if (linkError) throw linkError;
 
     const scoutPath = `${spot!.id}/scouting.svg`;
     const sessionPath = `${spot!.id}/session.svg`;
     await uploadPhoto(supabase, scoutPath, `${s.name} — scouting`, s.hue, 46);
     await uploadPhoto(supabase, sessionPath, `${s.name} — session`, s.hue, 62);
 
-    await supabase.from("photos").insert([
-      { spot_id: spot!.id, profile_id: authorId, kind: "scouting", storage_path: scoutPath },
+    // Errors are returned, not thrown, by supabase-js. Without this check a
+    // failed insert leaves spots with no photos and the seed still reports
+    // success — which is exactly what happened the first time this ran.
+    // Every object must carry the SAME keys. On a bulk insert PostgREST takes
+    // the union of keys across the array and explicitly sets missing ones to
+    // null, which bypasses column defaults — so omitting rights_attested on the
+    // scouting row sends null and trips its NOT NULL constraint.
+    const { error: photoError } = await supabase.from("photos").insert([
+      {
+        spot_id: spot!.id,
+        profile_id: authorId,
+        kind: "scouting",
+        storage_path: scoutPath,
+        rights_attested: false,
+        credit_name: null,
+      },
       {
         spot_id: spot!.id,
         profile_id: authorId,
@@ -1213,6 +1228,7 @@ export async function seed(supabase: SupabaseClient): Promise<number> {
         credit_name: "Photospots Seed",
       },
     ]);
+    if (photoError) throw photoError;
 
     created += 1;
   }

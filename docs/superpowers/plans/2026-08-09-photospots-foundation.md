@@ -3369,10 +3369,19 @@ export default [
 Create `app/routes/auth.login.tsx`:
 
 ```tsx
-import { Form, redirect, useActionData } from "react-router";
+import { Form, data, redirect, useActionData } from "react-router";
 import { createSupabaseServerClient } from "~/lib/supabase.server";
 import type { Route } from "./+types/auth.login";
 
+/**
+ * Every return path carries `headers`.
+ *
+ * signInWithOtp starts a PKCE exchange and writes a code_verifier cookie
+ * through the client's setAll. Returning a bare object drops those headers, the
+ * verifier never reaches the browser, and /auth/callback then fails to exchange
+ * the code — the login silently does nothing. Bare returns are only safe on
+ * paths that touched no Supabase state at all.
+ */
 export async function action({ request }: Route.ActionArgs) {
   const { supabase, headers } = createSupabaseServerClient(request);
   const form = await request.formData();
@@ -3380,27 +3389,27 @@ export async function action({ request }: Route.ActionArgs) {
   const origin = new URL(request.url).origin;
 
   if (intent === "google") {
-    const { data, error } = await supabase.auth.signInWithOAuth({
+    const { data: oauth, error } = await supabase.auth.signInWithOAuth({
       provider: "google",
       options: { redirectTo: `${origin}/auth/callback` },
     });
-    if (error) return { error: error.message };
-    return redirect(data.url, { headers });
+    if (error) return data({ error: error.message }, { headers });
+    return redirect(oauth.url, { headers });
   }
 
   if (intent === "magic-link") {
     const email = String(form.get("email") ?? "").trim();
-    if (!email) return { error: "Enter an email address." };
+    if (!email) return data({ error: "Enter an email address." }, { headers });
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: { emailRedirectTo: `${origin}/auth/callback` },
     });
-    if (error) return { error: error.message };
-    return { sent: true };
+    if (error) return data({ error: error.message }, { headers });
+    return data({ sent: true }, { headers });
   }
 
-  return { error: "Unknown sign-in method." };
+  return data({ error: "Unknown sign-in method." }, { headers });
 }
 
 export default function Login() {
@@ -3521,28 +3530,33 @@ export default function Home({ loaderData }: Route.ComponentProps) {
 }
 ```
 
-- [ ] **Step 6: Enable magic links locally**
+- [ ] **Step 6: Point Supabase auth at the dev server**
 
-Confirm `supabase/config.toml` contains, under `[auth.email]`:
+`supabase/config.toml` ships pointing at `http://127.0.0.1:3000`, which is not where this app runs.
+Supabase falls back to `site_url` whenever a redirect target is not allow-listed, so a magic link
+lands on a dead port with the code in the query string and no session is ever created. Set:
 
 ```toml
-enable_signup = true
+site_url = "http://localhost:5173"
+additional_redirect_urls = ["http://localhost:5173", "http://localhost:5173/auth/callback", "http://127.0.0.1:5173"]
 ```
 
-Restart the stack if you edit it:
+Confirm `enable_signup = true` under `[auth.email]`, then restart: `npx supabase stop && npx supabase start`.
 
-```bash
-npx supabase stop && npx supabase start
-```
+- [ ] **Step 7: Verify the magic link flow end to end**
 
-- [ ] **Step 7: Verify the magic link flow by hand**
+Do not verify this by eye — script it, because both failure modes above are silent. With the dev
+server running:
 
-Run `npm run dev`, open `http://localhost:5173/auth/login`, enter any address, and submit the magic link form.
-
-Open Mailpit at `http://127.0.0.1:54324`, find the message, and follow its link. (Older Supabase
-CLI docs call this Inbucket; it is the same port.)
-
-Expected: you land on `/` and it reads "Signed in as ...". Then click Sign out and confirm the link returns to "Sign in".
+1. `curl -X DELETE http://127.0.0.1:54324/api/v1/messages` to clear Mailpit.
+2. POST `intent=magic-link` and an email to `/auth/login` using a cookie jar.
+3. Assert the jar now holds a PKCE `code-verifier` cookie. **If it does not, the action dropped its
+   headers** — see the comment in `auth.login.tsx`.
+4. Read the newest message from `http://127.0.0.1:54324/api/v1/messages`, extract the `verify` URL.
+5. Follow it with `-L` and the same jar. The final URL must be `http://localhost:5173/`, not
+   `127.0.0.1:3000` and not `/auth/login?error=exchange-failed`.
+6. GET `/` with the jar and assert the page reads "Signed in as …".
+7. POST `/auth/logout` and assert the page offers "Sign in" again.
 
 Google OAuth needs real credentials and is verified at deploy time, not locally.
 

@@ -1612,43 +1612,31 @@ afterAll(async () => {
 describe("signals", () => {
   it("accepts a shoot-type upvote", async () => {
     const { error } = await serviceClient().from("signals").insert({
-      spot_id: spotId,
-      profile_id: userId,
-      kind: "shoot_type_upvote",
-      shoot_type_id: familyTypeId,
-      value: 1,
+      spot_id: spotId, profile_id: userId, kind: "shoot_type_upvote",
+      shoot_type_id: familyTypeId, value: 1,
     });
     expect(error).toBeNull();
   });
 
   it("rejects a second upvote for the same shoot type", async () => {
     const { error } = await serviceClient().from("signals").insert({
-      spot_id: spotId,
-      profile_id: userId,
-      kind: "shoot_type_upvote",
-      shoot_type_id: familyTypeId,
-      value: 1,
+      spot_id: spotId, profile_id: userId, kind: "shoot_type_upvote",
+      shoot_type_id: familyTypeId, value: 1,
     });
     expect(error?.code).toBe("23505");
   });
 
   it("allows the same user to upvote a different shoot type", async () => {
     const { error } = await serviceClient().from("signals").insert({
-      spot_id: spotId,
-      profile_id: userId,
-      kind: "shoot_type_upvote",
-      shoot_type_id: weddingTypeId,
-      value: 1,
+      spot_id: spotId, profile_id: userId, kind: "shoot_type_upvote",
+      shoot_type_id: weddingTypeId, value: 1,
     });
     expect(error).toBeNull();
   });
 
   it("accepts a shoot-again vote with no shoot type", async () => {
     const { error } = await serviceClient().from("signals").insert({
-      spot_id: spotId,
-      profile_id: userId,
-      kind: "shoot_again",
-      value: 1,
+      spot_id: spotId, profile_id: userId, kind: "shoot_again", value: 1,
     });
     expect(error).toBeNull();
   });
@@ -1657,42 +1645,30 @@ describe("signals", () => {
   // NULL shoot_type_id values are distinct and this insert would succeed.
   it("rejects a second shoot-again vote from the same user", async () => {
     const { error } = await serviceClient().from("signals").insert({
-      spot_id: spotId,
-      profile_id: userId,
-      kind: "shoot_again",
-      value: 0,
+      spot_id: spotId, profile_id: userId, kind: "shoot_again", value: 0,
     });
     expect(error?.code).toBe("23505");
   });
 
   it("rejects a shoot-type upvote with no shoot type", async () => {
     const { error } = await serviceClient().from("signals").insert({
-      spot_id: spotId,
-      profile_id: userId,
-      kind: "shoot_type_upvote",
-      value: 1,
+      spot_id: spotId, profile_id: userId, kind: "shoot_type_upvote", value: 1,
     });
     expect(error).not.toBeNull();
   });
 
   it("rejects a shoot-again vote that carries a shoot type", async () => {
     const { error } = await serviceClient().from("signals").insert({
-      spot_id: spotId,
-      profile_id: userId,
-      kind: "shoot_again",
-      shoot_type_id: familyTypeId,
-      value: 1,
+      spot_id: spotId, profile_id: userId, kind: "shoot_again",
+      shoot_type_id: familyTypeId, value: 1,
     });
     expect(error).not.toBeNull();
   });
 
   it("rejects a downvote — there are none", async () => {
     const { error } = await serviceClient().from("signals").insert({
-      spot_id: spotId,
-      profile_id: userId,
-      kind: "shoot_type_upvote",
-      shoot_type_id: familyTypeId,
-      value: -1,
+      spot_id: spotId, profile_id: userId, kind: "shoot_type_upvote",
+      shoot_type_id: familyTypeId, value: -1,
     });
     expect(error).not.toBeNull();
   });
@@ -1701,9 +1677,7 @@ describe("signals", () => {
 describe("photos", () => {
   it("accepts a scouting photo without a rights attestation", async () => {
     const { error } = await serviceClient().from("photos").insert({
-      spot_id: spotId,
-      profile_id: userId,
-      kind: "scouting",
+      spot_id: spotId, profile_id: userId, kind: "scouting",
       storage_path: `${spotId}/scout-1.jpg`,
     });
     expect(error).toBeNull();
@@ -1711,26 +1685,132 @@ describe("photos", () => {
 
   it("rejects a session photo without a rights attestation", async () => {
     const { error } = await serviceClient().from("photos").insert({
-      spot_id: spotId,
-      profile_id: userId,
-      kind: "session",
-      storage_path: `${spotId}/session-1.jpg`,
-      rights_attested: false,
+      spot_id: spotId, profile_id: userId, kind: "session",
+      storage_path: `${spotId}/session-1.jpg`, rights_attested: false,
     });
     expect(error).not.toBeNull();
   });
 
   it("accepts a session photo with the attestation", async () => {
     const { error } = await serviceClient().from("photos").insert({
-      spot_id: spotId,
-      profile_id: userId,
-      kind: "session",
-      storage_path: `${spotId}/session-2.jpg`,
-      rights_attested: true,
-      credit_name: "Ada Lovelace",
-      credit_url: "https://example.com",
+      spot_id: spotId, profile_id: userId, kind: "session",
+      storage_path: `${spotId}/session-2.jpg`, rights_attested: true,
+      credit_name: "Ada Lovelace", credit_url: "https://example.com",
     });
     expect(error).toBeNull();
+  });
+});
+
+// Task 8 established the pattern (spots.created_by / owner_profile_id): a
+// contributor deleting their account must not fail, and must not silently
+// erase the content other people rely on. Every table here that stores
+// content someone *authored* follows the same rule — the FK is nullable and
+// ON DELETE SET NULL, so the row survives with an anonymous author. Only
+// `signals` cascades, because a vote by a person who no longer exists isn't
+// content worth keeping anonymously — it's just a stale ballot.
+describe("account deletion", () => {
+  it("orphans authored content but discards the deleted user's votes", async () => {
+    const db = serviceClient();
+    const deleter = await createTestUser("Deleter");
+    const deleterId = deleter.id;
+
+    const { data: spot } = await db
+      .from("spots")
+      .insert({
+        kind: "studio",
+        name: "Deletion Test Spot",
+        slug: `deletion-test-${Date.now()}`,
+        location: "POINT(-85.7267 42.9214)",
+        created_by: deleterId,
+      })
+      .select("id")
+      .single();
+    const deletionSpotId = spot!.id as string;
+
+    const { data: photo } = await db
+      .from("photos")
+      .insert({
+        spot_id: deletionSpotId, profile_id: deleterId, kind: "scouting",
+        storage_path: `${deletionSpotId}/deletion-test.jpg`,
+      })
+      .select("id")
+      .single();
+
+    const { data: link } = await db
+      .from("spot_gallery_links")
+      .insert({
+        spot_id: deletionSpotId, profile_id: deleterId,
+        url: "https://example.com/gallery", title: "Full gallery",
+      })
+      .select("id")
+      .single();
+
+    const { data: comment } = await db
+      .from("comments")
+      .insert({ spot_id: deletionSpotId, profile_id: deleterId, body: "Great light in the morning." })
+      .select("id")
+      .single();
+
+    // deleter is the reporter on one report...
+    const { data: reportFiledByDeleter } = await db
+      .from("reports")
+      .insert({
+        target_type: "spot", target_id: deletionSpotId, profile_id: deleterId,
+        reason: "wrong location",
+      })
+      .select("id")
+      .single();
+
+    // ...and the resolving admin on another, filed by someone else.
+    const { data: reportResolvedByDeleter } = await db
+      .from("reports")
+      .insert({
+        target_type: "spot", target_id: deletionSpotId, profile_id: userId,
+        reason: "duplicate", status: "resolved", resolved_by: deleterId,
+      })
+      .select("id")
+      .single();
+
+    await db.from("studio_details").insert({
+      spot_id: deletionSpotId, claimed_by: deleterId, claimed_at: new Date().toISOString(),
+    });
+
+    await db.from("signals").insert({
+      spot_id: deletionSpotId, profile_id: deleterId, kind: "shoot_again", value: 1,
+    });
+
+    await deleteTestUser(deleterId);
+
+    const { data: photoAfter } = await db
+      .from("photos").select("profile_id").eq("id", photo!.id).single();
+    expect(photoAfter?.profile_id).toBeNull();
+
+    const { data: linkAfter } = await db
+      .from("spot_gallery_links").select("profile_id").eq("id", link!.id).single();
+    expect(linkAfter?.profile_id).toBeNull();
+
+    const { data: commentAfter } = await db
+      .from("comments").select("profile_id").eq("id", comment!.id).single();
+    expect(commentAfter?.profile_id).toBeNull();
+
+    const { data: reportFiledAfter } = await db
+      .from("reports").select("profile_id").eq("id", reportFiledByDeleter!.id).single();
+    expect(reportFiledAfter?.profile_id).toBeNull();
+
+    const { data: reportResolvedAfter } = await db
+      .from("reports").select("resolved_by, profile_id").eq("id", reportResolvedByDeleter!.id).single();
+    expect(reportResolvedAfter?.resolved_by).toBeNull();
+    expect(reportResolvedAfter?.profile_id).toBe(userId);
+
+    const { data: studioAfter } = await db
+      .from("studio_details").select("claimed_by").eq("spot_id", deletionSpotId).single();
+    expect(studioAfter?.claimed_by).toBeNull();
+
+    const { data: signalsAfter } = await db
+      .from("signals").select("id").eq("spot_id", deletionSpotId);
+    expect(signalsAfter).toEqual([]);
+
+    await db.from("spots").delete().eq("id", deletionSpotId);
   });
 });
 ```
@@ -1759,9 +1839,19 @@ create table public.spot_shoot_types (
 
 create index spot_shoot_types_by_type on public.spot_shoot_types (shoot_type_id, spot_id);
 
+grant select, insert, delete on public.spot_shoot_types to service_role;
+alter table public.spot_shoot_types enable row level security;
+
 create table public.signals (
   id uuid primary key default gen_random_uuid(),
   spot_id uuid not null references public.spots (id) on delete cascade,
+  -- Cascade, unlike every other profile_id below. A vote is not content
+  -- someone authored for others to read — it is a ballot, and a ballot cast
+  -- by a person who no longer has an account is not worth preserving
+  -- anonymously. Cascading also frees the (spot_id, kind, shoot_type_id) slot
+  -- in signals_one_per_user, which SET NULL would not: two anonymized rows
+  -- with the same spot/kind/shoot_type_id would collide on the unique
+  -- constraint on the very next insert.
   profile_id uuid not null references public.profiles (id) on delete cascade,
   kind public.signal_kind not null,
   shoot_type_id integer references public.shoot_types (id),
@@ -1785,10 +1875,21 @@ create table public.signals (
 
 create index signals_spot_idx on public.signals (spot_id);
 
+-- select, insert, delete only: signals_one_per_user has no legitimate use for
+-- update, by design (see the comment on that constraint) — changing a vote is
+-- delete-then-insert, not update. select is needed for the account-deletion
+-- test to confirm a deleted user's votes are gone, not merely anonymized.
+grant select, insert, delete on public.signals to service_role;
+alter table public.signals enable row level security;
+
 create table public.photos (
   id uuid primary key default gen_random_uuid(),
   spot_id uuid not null references public.spots (id) on delete cascade,
-  profile_id uuid not null references public.profiles (id),
+  -- Nullable with ON DELETE SET NULL, matching spots.created_by (spec §4.6a,
+  -- extended by §4.6a's "photo attribution follows the same rule"): a photo
+  -- is content other people rely on, so it survives account deletion with an
+  -- anonymous author instead of vanishing or blocking the deletion.
+  profile_id uuid references public.profiles (id) on delete set null,
   kind public.photo_kind not null,
   storage_path text not null unique,
   caption text,
@@ -1810,10 +1911,15 @@ create table public.photos (
 
 create index photos_spot_idx on public.photos (spot_id, kind);
 
+grant select, insert, update, delete on public.photos to service_role;
+alter table public.photos enable row level security;
+
 create table public.spot_gallery_links (
   id uuid primary key default gen_random_uuid(),
   spot_id uuid not null references public.spots (id) on delete cascade,
-  profile_id uuid not null references public.profiles (id),
+  -- Same reasoning as photos.profile_id: an external gallery link is content
+  -- someone contributed, and it survives their account being deleted.
+  profile_id uuid references public.profiles (id) on delete set null,
   url text not null,
   title text not null,
   shoot_type_id integer references public.shoot_types (id),
@@ -1822,10 +1928,16 @@ create table public.spot_gallery_links (
 
 create index spot_gallery_links_spot_idx on public.spot_gallery_links (spot_id);
 
+grant select, insert, update, delete on public.spot_gallery_links to service_role;
+alter table public.spot_gallery_links enable row level security;
+
 create table public.comments (
   id uuid primary key default gen_random_uuid(),
   spot_id uuid not null references public.spots (id) on delete cascade,
-  profile_id uuid not null references public.profiles (id),
+  -- Same reasoning as photos.profile_id. Comments are flat, not threaded, but
+  -- they are still content other visitors read; deleting the author's
+  -- account should not delete the comment out from under that context.
+  profile_id uuid references public.profiles (id) on delete set null,
   body text not null check (length(trim(body)) > 0),
   status public.photo_status not null default 'published',
   created_at timestamptz not null default now()
@@ -1833,28 +1945,55 @@ create table public.comments (
 
 create index comments_spot_idx on public.comments (spot_id, created_at desc);
 
+grant select, insert, update, delete on public.comments to service_role;
+alter table public.comments enable row level security;
+
 create table public.studio_details (
   spot_id uuid primary key references public.spots (id) on delete cascade,
   hourly_rate_cents integer check (hourly_rate_cents is null or hourly_rate_cents >= 0),
   booking_url text,
   contact_email text,
-  claimed_by uuid references public.profiles (id),
+  -- Mirrors spots.owner_profile_id (task 8, spec §4.6a): claiming is what
+  -- sets owner_profile_id on the spot row (spec §9.3), and this is the same
+  -- relationship recorded on the 1:1 extension table. If the claiming
+  -- photographer deletes their account, the studio reverts to unclaimed
+  -- rather than blocking the deletion or dragging the listing's business
+  -- details (hourly_rate_cents, booking_url, contact_email) down with it.
+  claimed_by uuid references public.profiles (id) on delete set null,
   claimed_at timestamptz
 );
+
+grant select, insert, update, delete on public.studio_details to service_role;
+alter table public.studio_details enable row level security;
 
 create table public.reports (
   id uuid primary key default gen_random_uuid(),
   target_type public.report_target not null,
   target_id uuid not null,
-  profile_id uuid not null references public.profiles (id),
+  -- The reporter. Nullable with ON DELETE SET NULL rather than the default
+  -- NO ACTION, for the same reason as every other profile_id here: a plain
+  -- FK would make account deletion fail for anyone who had ever filed a
+  -- report — exactly the task-8 bug, one table over. CASCADE was considered
+  -- and rejected: an open report is a moderation record the admin queue still
+  -- needs to act on, and letting it vanish because the reporter closed their
+  -- account would let deleting an account double as deleting the evidence of
+  -- what was reported. So it survives anonymized, like authored content.
+  profile_id uuid references public.profiles (id) on delete set null,
   reason text not null,
   note text,
   status public.report_status not null default 'open',
-  resolved_by uuid references public.profiles (id),
+  -- The admin who resolved it. Already nullable (a report may be unresolved);
+  -- ON DELETE SET NULL for the same audit-preserving reason as profile_id
+  -- above — an admin's account being deleted should not block deletion or
+  -- erase the resolution record, just the identity behind it.
+  resolved_by uuid references public.profiles (id) on delete set null,
   created_at timestamptz not null default now()
 );
 
 create index reports_open_idx on public.reports (status, created_at desc);
+
+grant select, insert, update, delete on public.reports to service_role;
+alter table public.reports enable row level security;
 ```
 
 - [ ] **Step 4: Apply the migration**
@@ -1868,7 +2007,7 @@ Expected: success.
 - [ ] **Step 5: Run the test to verify it passes**
 
 Run: `npx vitest run tests/db/schema-signals.test.ts`
-Expected: PASS — 11 tests. The "rejects a second shoot-again vote" case is the one that proves `NULLS NOT DISTINCT` took effect.
+Expected: PASS — 12 tests. The "rejects a second shoot-again vote" case is the one that proves `NULLS NOT DISTINCT` took effect.
 
 - [ ] **Step 6: Commit**
 

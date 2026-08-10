@@ -80,6 +80,7 @@ land — at `http://127.0.0.1:54324`.
 | `npm run build` | Production build |
 | `npx supabase db reset` | Replay all migrations from empty |
 | `npm run backfill:scores` | Recompute scores after changing weights |
+| `npm run refresh:hot` | Recompute time-decayed hot scores (runs on a schedule in production) |
 
 ## Layout
 
@@ -89,7 +90,7 @@ app/data/      Supabase queries; database types do not escape this directory
 app/lib/       env validation and the per-request Supabase client
 app/routes/    thin loaders and actions
 supabase/      migrations: schema, triggers, row-level security
-scripts/       backfill-scores.ts
+scripts/       backfill-scores.ts, refresh-hot-scores.ts
 tests/db/      integration and RLS tests against local Supabase
 ```
 

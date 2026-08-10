@@ -15,7 +15,8 @@
     "test:db": "vitest run --project db --passWithNoTests",
     "test:coverage": "vitest run --coverage",
     "test:watch": "vitest",
-    "backfill:scores": "tsx --env-file-if-exists=.env scripts/backfill-scores.ts"
+    "backfill:scores": "tsx --env-file-if-exists=.env scripts/backfill-scores.ts",
+    "refresh:hot": "tsx --env-file-if-exists=.env scripts/refresh-hot-scores.ts"
   },
   "dependencies": {
     "@react-router/node": "^8",

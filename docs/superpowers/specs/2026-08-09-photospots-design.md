@@ -280,6 +280,8 @@ Score must be sortable in SQL but its weights must be testable in TypeScript. Re
    do not need to be real-time, which avoids an event-log table entirely: the job scans
    signals/comments/photos within the trailing window and calls `computeHotScore`.
 
+   Implemented as `scripts/refresh-hot-scores.ts`, run via `npm run refresh:hot`.
+
    The scheduler must not be pg_cron, despite the convenience. pg_cron runs SQL, and computing
    `hot_score` in SQL would mean reimplementing the decay curve and the weights there — a second
    copy of the ranking rules, in a second language, free to drift from `domain/scoring`. That is
@@ -293,8 +295,9 @@ are tuned.
 events whose weights the caller has already applied. So the hot-refresh job must map signal kind to
 weight somewhere, and a fresh `switch (kind)` written there is the single most likely place for the
 two rankings to drift apart after a re-weighting — the exact failure point 1 exists to prevent.
-Whichever plan builds the refresh job must route that mapping through one shared
-`weightForSignalKind(kind, weights)` in `domain/scoring`, not reimplement it.
+That mapping is `weightForSignalKind` in `domain/scoring`, and the refresh job routes through it.
+`signal-weight.test.ts` asserts the counter-based and event-based paths agree, including under
+retuned weights, so a re-weighting cannot move one ranking without the other.
 
 Initial weights (configuration, expected to change):
 

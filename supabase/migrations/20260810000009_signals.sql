@@ -46,14 +46,32 @@ as $$
       bool_or(s.profile_id = auth.uid()) as viewer_upvoted
     from public.signals s
     where s.spot_id = p_spot_id
+      -- Defence in depth, and inert as written: signals_shape forces every
+      -- shoot_again row to carry a null shoot_type_id, which the join below
+      -- already excludes. Deleting this line changes no result today. It
+      -- becomes load-bearing the day a new signal kind carries a shoot type.
       and s.kind = 'shoot_type_upvote'
       and s.shoot_type_id = t.id
   ) v on true
-  where v.upvote_count > 0
-     or exists (
-       select 1 from public.spot_shoot_types st
-       where st.spot_id = p_spot_id and st.shoot_type_id = t.id
-     )
+  -- status is filtered explicitly rather than left to RLS. This function never
+  -- selects from public.spots, so spots_read never runs on it: without this
+  -- clause anyone holding the id of a hidden or removed spot could read its
+  -- shoot types and vote counts straight off the public API. Both sibling RPCs
+  -- in 20260810000007_explore.sql filter status the same way.
+  where exists (
+      select 1 from public.spots sp
+      where sp.id = p_spot_id and sp.status = 'published'
+    )
+    -- These parentheses are load-bearing: `and` binds tighter than `or`, so
+    -- without them the tagged-types branch would satisfy the where clause on
+    -- its own and bypass the status filter entirely.
+    and (
+      v.upvote_count > 0
+      or exists (
+        select 1 from public.spot_shoot_types st
+        where st.spot_id = p_spot_id and st.shoot_type_id = t.id
+      )
+    )
   order by t.sort_order, t.id
 $$;
 
@@ -65,3 +83,19 @@ revoke execute on function public.spot_signal_summary(uuid) from public;
 -- (spec §4.6). service_role included because revoking from PUBLIC takes the
 -- privilege from it too — BYPASSRLS skips row policies, not the GRANT system.
 grant execute on function public.spot_signal_summary(uuid) to anon, authenticated, service_role;
+
+-- shoot_types is reference data, and it was the one table where service_role
+-- held SELECT alone; every other table in this schema already grants it write.
+--
+-- The tests need it. The seed sets sort_order = id * 10 for all nine types, so
+-- across the seeded rows `order by sort_order` and `order by id` are perfectly
+-- correlated and no assertion over them can tell the two apart — a dropped
+-- ORDER BY would go unnoticed. Writing a probe type whose id is highest and
+-- whose sort_order is lowest is what makes the ordering observable.
+--
+-- Deliberately no grant on shoot_types_id_seq: nextval accepts USAGE *or*
+-- UPDATE, and Supabase's default privileges already give service_role UPDATE
+-- ('w') on sequences in public. Verified by inserting as service_role with the
+-- table grants below and no sequence grant at all; had it been required this
+-- would fail loudly at db-reset time, not silently.
+grant insert, delete on public.shoot_types to service_role;

@@ -103,6 +103,7 @@ let other: TestUser;
 let spotId: string;
 let familyId: number;
 let petsId: number;
+let probeId: number;
 
 beforeAll(async () => {
   voter = await createTestUser("Summary Voter");
@@ -129,23 +130,41 @@ beforeAll(async () => {
   if (error) throw error;
   spotId = data.id;
 
-  // Both objects carry the same keys: PostgREST unions the keys of a bulk
+  // A probe type that makes the ordering observable. The seed sets
+  // sort_order = id * 10, so across the seeded rows id order and sort_order
+  // order agree exactly and no assertion can distinguish them. This row is the
+  // newest id (so it sorts last by id), the lowest sort_order (so it sorts
+  // first by sort_order) and a label that sorts last alphabetically — which
+  // makes `order by id`, `order by label` and a missing ORDER BY all visible.
+  const { data: probe, error: probeError } = await admin
+    .from("shoot_types")
+    .insert({ slug: "zz-order-probe", label: "Zulu Probe", sort_order: 5 })
+    .select("id")
+    .single();
+  if (probeError) throw probeError;
+  probeId = probe.id;
+
+  // Every object carries the same keys: PostgREST unions the keys of a bulk
   // insert and nulls the gaps, bypassing column defaults.
   const { error: linkError } = await admin.from("spot_shoot_types").insert([
     { spot_id: spotId, shoot_type_id: familyId },
     { spot_id: spotId, shoot_type_id: petsId },
+    { spot_id: spotId, shoot_type_id: probeId },
   ]);
   if (linkError) throw linkError;
 });
 
 afterAll(async () => {
+  // The spot goes first: spot_shoot_types cascades from it, and those rows
+  // reference the probe type, which cannot be deleted while they exist.
   await serviceClient().from("spots").delete().eq("id", spotId);
+  await serviceClient().from("shoot_types").delete().eq("id", probeId);
   await deleteTestUser(voter.id);
   await deleteTestUser(other.id);
 });
 
-const summary = async (client = anonClient()): Promise<SummaryRow[]> => {
-  const { data, error } = await client.rpc("spot_signal_summary", { p_spot_id: spotId });
+const summary = async (client = anonClient(), id = spotId): Promise<SummaryRow[]> => {
+  const { data, error } = await client.rpc("spot_signal_summary", { p_spot_id: id });
   expect(error).toBeNull();
   return (data ?? []) as SummaryRow[];
 };
@@ -155,12 +174,12 @@ const summary = async (client = anonClient()): Promise<SummaryRow[]> => {
 describe("spot_signal_summary", () => {
   it("is callable by a logged-out visitor, since browsing is open (spec §4.6)", async () => {
     const rows = await summary();
-    expect(rows).toHaveLength(2);
+    expect(rows).toHaveLength(3);
   });
 
   it("lists every tagged shoot type at zero before anyone votes", async () => {
     const rows = await summary();
-    expect(rows.map((r) => r.slug).sort()).toEqual(["family", "pets"]);
+    expect(rows.map((r) => r.slug).sort()).toEqual(["family", "pets", "zz-order-probe"]);
     expect(rows.every((r) => r.upvote_count === 0)).toBe(true);
     expect(rows.every((r) => r.viewer_upvoted === false)).toBe(true);
   });
@@ -197,10 +216,15 @@ describe("spot_signal_summary", () => {
     expect(loggedOut.every((r) => r.viewer_upvoted === false)).toBe(true);
   });
 
+  // Asserts the exact sequence, not merely that sort_order is non-decreasing.
+  // The weaker form passes under `order by id`, under `order by label` and
+  // with no ORDER BY at all, because the seeded rows have sort_order = id * 10
+  // and every one of those orders coincides. zz-order-probe is last by id and
+  // by label but first by sort_order, so only a real sort_order ordering
+  // produces this sequence.
   it("orders by sort_order", async () => {
     const rows = await summary();
-    const orders = rows.map((r) => r.sort_order);
-    expect(orders).toEqual([...orders].sort((a, b) => a - b));
+    expect(rows.map((r) => r.slug)).toEqual(["zz-order-probe", "family", "pets"]);
   });
 
   // A spot's shoot types are editable (plan 3). Listing only the currently
@@ -221,6 +245,9 @@ describe("spot_signal_summary", () => {
     expect(pets!.upvote_count).toBe(1);
   });
 
+  // Depends on running after the voting tests: it is the votes on the *other*
+  // spot that give `where s.spot_id = p_spot_id` something to exclude. Move
+  // this test earlier and it still passes, but stops covering that filter.
   it("returns nothing for a spot with no shoot types and no votes", async () => {
     const admin = serviceClient();
     const { data, error } = await admin
@@ -237,10 +264,63 @@ describe("spot_signal_summary", () => {
       .single();
     if (error) throw error;
 
-    const { data: rows } = await anonClient().rpc("spot_signal_summary", { p_spot_id: data.id });
-    expect(rows).toEqual([]);
+    // finally, so a failed assertion cannot strand a published spot in the
+    // database: spots.created_by is `on delete set null`, so deleting the test
+    // user would leave the row behind without any error to notice.
+    try {
+      expect(await summary(anonClient(), data.id)).toEqual([]);
+    } finally {
+      await admin.from("spots").delete().eq("id", data.id);
+    }
+  });
 
-    await admin.from("spots").delete().eq("id", data.id);
+  // The function never selects from public.spots, so spots_read cannot filter
+  // it. Without an explicit status check the vote breakdown of a removed spot
+  // is readable by anyone holding its id. The spot is both tagged and voted on
+  // so that neither branch of the union can smuggle it through — a status
+  // check left outside the parentheses would still fail this test.
+  it("returns nothing for a spot RLS hides, even to a caller holding its id", async () => {
+    const admin = serviceClient();
+    const { data, error } = await admin
+      .from("spots")
+      .insert({
+        kind: "outdoor",
+        name: "Removed Spot",
+        slug: `removed-${crypto.randomUUID().slice(0, 8)}`,
+        location: "POINT(-85.7 42.97)",
+        created_by: voter.id,
+        status: "removed",
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+
+    try {
+      await admin.from("spot_shoot_types").insert({ spot_id: data.id, shoot_type_id: familyId });
+      await admin.from("signals").insert({
+        spot_id: data.id,
+        profile_id: voter.id,
+        kind: "shoot_type_upvote",
+        shoot_type_id: familyId,
+        value: 1,
+      });
+
+      // The spot really is hidden by RLS, so the RPC is the only way in.
+      const { data: visible } = await anonClient().from("spots").select("id").eq("id", data.id);
+      expect(visible).toEqual([]);
+
+      expect(await summary(anonClient(), data.id)).toEqual([]);
+    } finally {
+      await admin.from("spots").delete().eq("id", data.id);
+    }
+  });
+
+  // The other half of the guard: it must hide unpublished spots without
+  // hiding published ones.
+  it("still returns rows for a published spot", async () => {
+    const rows = await summary();
+    expect(rows.length).toBeGreaterThan(0);
+    expect(rows.find((r) => r.slug === "family")!.upvote_count).toBe(2);
   });
 });
 ```
@@ -306,14 +386,32 @@ as $$
       bool_or(s.profile_id = auth.uid()) as viewer_upvoted
     from public.signals s
     where s.spot_id = p_spot_id
+      -- Defence in depth, and inert as written: signals_shape forces every
+      -- shoot_again row to carry a null shoot_type_id, which the join below
+      -- already excludes. Deleting this line changes no result today. It
+      -- becomes load-bearing the day a new signal kind carries a shoot type.
       and s.kind = 'shoot_type_upvote'
       and s.shoot_type_id = t.id
   ) v on true
-  where v.upvote_count > 0
-     or exists (
-       select 1 from public.spot_shoot_types st
-       where st.spot_id = p_spot_id and st.shoot_type_id = t.id
-     )
+  -- status is filtered explicitly rather than left to RLS. This function never
+  -- selects from public.spots, so spots_read never runs on it: without this
+  -- clause anyone holding the id of a hidden or removed spot could read its
+  -- shoot types and vote counts straight off the public API. Both sibling RPCs
+  -- in 20260810000007_explore.sql filter status the same way.
+  where exists (
+      select 1 from public.spots sp
+      where sp.id = p_spot_id and sp.status = 'published'
+    )
+    -- These parentheses are load-bearing: `and` binds tighter than `or`, so
+    -- without them the tagged-types branch would satisfy the where clause on
+    -- its own and bypass the status filter entirely.
+    and (
+      v.upvote_count > 0
+      or exists (
+        select 1 from public.spot_shoot_types st
+        where st.spot_id = p_spot_id and st.shoot_type_id = t.id
+      )
+    )
   order by t.sort_order, t.id
 $$;
 
@@ -325,6 +423,22 @@ revoke execute on function public.spot_signal_summary(uuid) from public;
 -- (spec §4.6). service_role included because revoking from PUBLIC takes the
 -- privilege from it too — BYPASSRLS skips row policies, not the GRANT system.
 grant execute on function public.spot_signal_summary(uuid) to anon, authenticated, service_role;
+
+-- shoot_types is reference data, and it was the one table where service_role
+-- held SELECT alone; every other table in this schema already grants it write.
+--
+-- The tests need it. The seed sets sort_order = id * 10 for all nine types, so
+-- across the seeded rows `order by sort_order` and `order by id` are perfectly
+-- correlated and no assertion over them can tell the two apart — a dropped
+-- ORDER BY would go unnoticed. Writing a probe type whose id is highest and
+-- whose sort_order is lowest is what makes the ordering observable.
+--
+-- Deliberately no grant on shoot_types_id_seq: nextval accepts USAGE *or*
+-- UPDATE, and Supabase's default privileges already give service_role UPDATE
+-- ('w') on sequences in public. Verified by inserting as service_role with the
+-- table grants below and no sequence grant at all; had it been required this
+-- would fail loudly at db-reset time, not silently.
+grant insert, delete on public.shoot_types to service_role;
 ```
 
 - [ ] **Step 4: Apply the migration and run the test**
@@ -339,13 +453,22 @@ Then:
 npm run test:db -- signal-summary
 ```
 
-Expected: 7 passing.
+Expected: 9 passing.
 
-- [ ] **Step 5: Mutation-test the union clause**
+- [ ] **Step 5: Mutation-test every clause that a test claims to guard**
 
-Temporarily delete `v.upvote_count > 0 or` from the `where` clause, re-run `npx supabase db reset` and the test.
+Each row below is one temporary edit to the migration, followed by `npx supabase db reset` and `npm run test:db -- signal-summary`. Exactly the named test must go red, and the other eight must stay green. Restore the clause and reset before moving to the next row.
 
-Expected: **"keeps a shoot type that still carries votes after it is untagged" fails.** If it still passes, the test is not guarding the behavior it claims to and must be fixed before continuing. Restore the clause and reset again.
+| # | Mutation | Test that must fail |
+| --- | --- | --- |
+| 1 | `order by t.sort_order, t.id` → `order by t.id` | orders by sort_order |
+| 2 | `order by t.sort_order, t.id` → `order by t.label` | orders by sort_order |
+| 3 | delete the ORDER BY line entirely | orders by sort_order |
+| 4 | `order by t.sort_order, t.id` → `order by t.sort_order desc` | orders by sort_order |
+| 5 | delete the `exists (… sp.status = 'published')` guard | returns nothing for a spot RLS hides… |
+| 6 | delete `v.upvote_count > 0 or` from the union | keeps a shoot type that still carries votes after it is untagged |
+
+Rows 1–3 are the point of the probe shoot type. Against the seeded rows alone all three of those mutations pass every assertion, because the seed sets `sort_order = id * 10` and id order, sort_order order and label order all coincide — a test that only checks `sort_order` is non-decreasing catches nothing but a full reversal (row 4). If any mutation here leaves the suite green, the test is not guarding what it claims and must be fixed before continuing.
 
 - [ ] **Step 6: Commit**
 

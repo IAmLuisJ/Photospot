@@ -2656,6 +2656,56 @@ describe("studio claiming", () => {
       .eq("spot_id", studioSpotId);
     expect(error).toBeNull();
   });
+
+  // The happy path, which every other test here only approaches from the
+  // rejection side. Without it, a claim flow that can never succeed — the
+  // mirror image of the bug this design replaced — would pass the suite.
+  it("lets someone whose verified email matches the listing claim it", async () => {
+    const db = serviceClient();
+    const { data: spot } = await db
+      .from("spots")
+      .insert({
+        kind: "studio",
+        name: "Claimable By Owner",
+        slug: `owner-claim-${Date.now()}`,
+        location: "POINT(-85.67 42.96)",
+        created_by: author.id,
+      })
+      .select("id")
+      .single();
+
+    // The listing's contact address is the claimant's own confirmed email.
+    await db
+      .from("studio_details")
+      .insert({ spot_id: spot!.id, contact_email: stranger.email });
+
+    const { error } = await stranger.client.rpc("claim_studio", { p_spot_id: spot!.id });
+    expect(error).toBeNull();
+
+    const { data: details } = await db
+      .from("studio_details")
+      .select("claimed_by, claimed_at")
+      .eq("spot_id", spot!.id)
+      .single();
+    expect(details?.claimed_by).toBe(stranger.id);
+    expect(details?.claimed_at).not.toBeNull();
+
+    // §9.3: the claim sets ownership on the spot as well.
+    const { data: owned } = await db
+      .from("spots")
+      .select("owner_profile_id")
+      .eq("id", spot!.id)
+      .single();
+    expect(owned?.owner_profile_id).toBe(stranger.id);
+
+    // A claimed listing cannot be claimed again.
+    const { error: again } = await stranger.client.rpc("claim_studio", {
+      p_spot_id: spot!.id,
+    });
+    expect(again).not.toBeNull();
+
+    await db.from("spots").delete().eq("id", spot!.id);
+  });
 });
 
 describe("moderation", () => {
@@ -2974,7 +3024,7 @@ Expected: success.
 - [ ] **Step 5: Run the test to verify it passes**
 
 Run: `npx vitest run tests/db/rls.test.ts`
-Expected: PASS — 21 tests
+Expected: PASS — 22 tests
 
 - [ ] **Step 6: Run the full suite**
 

@@ -3762,10 +3762,15 @@ if (process.argv[1]?.endsWith("backfill-scores.ts")) {
 
 - [ ] **Step 4: Add the npm script**
 
+`--env-file-if-exists` because the script reads `SUPABASE_URL` and
+`SUPABASE_SERVICE_ROLE_KEY` from `process.env` and nothing else loads them for a CLI run — Vitest
+loads `.env` via `loadEnv`, but `npm run` does not. The `-if-exists` variant keeps it working in
+production, where there is no `.env` file and the platform supplies the environment.
+
 Add to `package.json` `"scripts"`:
 
 ```json
-"backfill:scores": "tsx scripts/backfill-scores.ts"
+"backfill:scores": "tsx --env-file-if-exists=.env scripts/backfill-scores.ts"
 ```
 
 - [ ] **Step 5: Run the test to verify it passes**

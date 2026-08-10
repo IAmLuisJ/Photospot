@@ -566,12 +566,18 @@ export interface ExploreFilters {
   view: ExploreView;
 }
 
-/** Downtown Grand Rapids — the launch market (spec §2). */
+/**
+ * Grand Rapids — the launch market (spec §2).
+ *
+ * Wide enough to contain every seeded spot, including Riverside Park at
+ * lat 43.0123. A tighter downtown box left a first-time visitor looking at
+ * five of six spots with no indication the sixth existed.
+ */
 export const DEFAULT_VIEWPORT: Bounds = Object.freeze({
-  west: -85.7267,
-  south: 42.9214,
-  east: -85.6021,
-  north: 42.9891,
+  west: -85.7500,
+  south: 42.9100,
+  east: -85.5900,
+  north: 43.0300,
 });
 
 export const DEFAULT_FILTERS: ExploreFilters = Object.freeze({
@@ -2458,7 +2464,9 @@ for T in 1 7; do
 done
 ```
 
-Expected: `type=1` (family) returns **3** spots, `type=7` (wedding) returns **1**. Count distinct
+Expected: `type=1` (family) returns **3** spots, `type=7` (wedding) returns **1**. The default
+viewport is deliberately wide enough to contain every seeded spot — a tighter downtown box showed
+five of six on first load, with nothing to hint the sixth existed. Count distinct
 `/spots/` links rather than `grep -c "spot-card"` — the latter counts matching *lines*, and each card
 emits several `spot-card__*` classes, so it would not equal the number of results.
 

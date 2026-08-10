@@ -11,12 +11,18 @@ export interface ExploreFilters {
   view: ExploreView;
 }
 
-/** Downtown Grand Rapids — the launch market (spec §2). */
+/**
+ * Grand Rapids — the launch market (spec §2).
+ *
+ * Wide enough to contain every seeded spot, including Riverside Park at
+ * lat 43.0123. A tighter downtown box left a first-time visitor looking at
+ * five of six spots with no indication the sixth existed.
+ */
 export const DEFAULT_VIEWPORT: Bounds = Object.freeze({
-  west: -85.7267,
-  south: 42.9214,
-  east: -85.6021,
-  north: 42.9891,
+  west: -85.7500,
+  south: 42.9100,
+  east: -85.5900,
+  north: 43.0300,
 });
 
 export const DEFAULT_FILTERS: ExploreFilters = Object.freeze({

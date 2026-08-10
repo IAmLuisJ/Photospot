@@ -15,8 +15,8 @@ Grand-Rapids-specific.
 
 ## Status
 
-**The map works.** Browse seeded Grand Rapids spots, filter by shoot type, switch between three
-views, and open a spot's detail page. 188 tests. Submitting, photos, voting and comments are next.
+**You can add spots.** Browse the map, filter by shoot type, and submit a location with photos —
+with a duplicate check before the form. 240 tests. Voting and comments are next.
 
 | | |
 | --- | --- |
@@ -24,7 +24,8 @@ views, and open a spot's detail page. 188 tests. Submitting, photos, voting and 
 | ✅ Database | Full schema, counter triggers, row-level security |
 | ✅ Auth | Google and email magic link, verified end to end |
 | ✅ Explore | Viewport map, shoot-type filters, three views, spot detail |
-| ⬜ Next | Contribution: submission, photo upload, voting, comments |
+| ✅ Contribution | Submission with duplicate check, photo upload, editing, gallery links |
+| ⬜ Next | Voting and comments |
 
 Design and implementation plan live in [`docs/superpowers/`](docs/superpowers/).
 
@@ -43,6 +44,10 @@ established favourite.
 
 **Duplicates are prevented, not merged.** Dropping a pin checks for existing spots within ~200 m
 *before* showing the form and asks "is it one of these?" — turning a rejection into a contribution.
+
+**Hosted photos are capped per spot**, enforced by a database trigger rather than a form check, so
+it holds however the row arrives. Full sessions are linked rather than uploaded, which bounds
+storage and gives the photographer the link back they want anyway.
 
 ## Requirements
 

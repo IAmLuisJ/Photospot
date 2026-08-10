@@ -15,15 +15,16 @@ Grand-Rapids-specific.
 
 ## Status
 
-**The foundation is complete.** Schema, authorization, and auth all work and are covered by 110
-tests. There is not yet a map or any real UI — that is the next plan.
+**The map works.** Browse seeded Grand Rapids spots, filter by shoot type, switch between three
+views, and open a spot's detail page. 188 tests. Submitting, photos, voting and comments are next.
 
 | | |
 | --- | --- |
 | ✅ Pure domain layer | Scoring, time decay, geography — 38 tests, no database |
-| ✅ Database | Full schema, counter triggers, row-level security — 72 tests |
+| ✅ Database | Full schema, counter triggers, row-level security |
 | ✅ Auth | Google and email magic link, verified end to end |
-| ⬜ Next | The map itself: viewport queries, spot pages, submission |
+| ✅ Explore | Viewport map, shoot-type filters, three views, spot detail |
+| ⬜ Next | Contribution: submission, photo upload, voting, comments |
 
 Design and implementation plan live in [`docs/superpowers/`](docs/superpowers/).
 
@@ -62,8 +63,12 @@ Copy the printed values into `.env` using [`.env.example`](.env.example) as the 
 (`npx supabase status -o env` reprints them). Then:
 
 ```bash
-npm run dev
+npm run seed && npm run dev
 ```
+
+Seeding is optional but the map is empty without it. `MAP_STYLE_URL` is optional too — it defaults
+to MapLibre's demo tiles, which are fine for development and should be pointed at a real provider
+for production.
 
 Local Supabase Studio runs at `http://127.0.0.1:54323`, and Mailpit — where magic-link emails
 land — at `http://127.0.0.1:54324`.
@@ -79,15 +84,17 @@ land — at `http://127.0.0.1:54324`.
 | `npm run typecheck` | TypeScript |
 | `npm run build` | Production build |
 | `npx supabase db reset` | Replay all migrations from empty |
+| `npm run seed` | Seed Grand Rapids spots with placeholder photos |
 | `npm run backfill:scores` | Recompute scores after changing weights |
 | `npm run refresh:hot` | Recompute time-decayed hot scores (runs on a schedule in production) |
 
 ## Layout
 
 ```
-app/domain/    pure functions, no I/O — scoring and geography live here
+app/domain/    pure functions, no I/O — scoring, geography and filters
 app/data/      Supabase queries; database types do not escape this directory
-app/lib/       env validation and the per-request Supabase client
+app/lib/       env validation, the per-request Supabase client, photo URLs
+app/components/ map and explore UI; the map takes props and emits events
 app/routes/    thin loaders and actions
 supabase/      migrations: schema, triggers, row-level security
 scripts/       backfill-scores.ts, refresh-hot-scores.ts

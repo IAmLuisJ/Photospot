@@ -959,6 +959,8 @@ import {
 let voter: TestUser;
 let other: TestUser;
 let spotId: string;
+/** A second spot, so "retract" can be shown not to reach across spots. */
+let otherSpotId: string;
 let familyId: number;
 
 beforeAll(async () => {
@@ -966,7 +968,11 @@ beforeAll(async () => {
   other = await createTestUser("Data Other");
   const admin = serviceClient();
 
-  const { data: types } = await admin.from("shoot_types").select("id, slug").eq("slug", "family");
+  const { data: types, error: typeError } = await admin
+    .from("shoot_types")
+    .select("id, slug")
+    .eq("slug", "family");
+  if (typeError) throw typeError;
   familyId = types![0].id;
 
   const { data, error } = await admin
@@ -984,33 +990,66 @@ beforeAll(async () => {
   if (error) throw error;
   spotId = data.id;
 
-  const { error: linkError } = await admin
-    .from("spot_shoot_types")
-    .insert({ spot_id: spotId, shoot_type_id: familyId });
+  const { data: second, error: secondError } = await admin
+    .from("spots")
+    .insert({
+      kind: "outdoor",
+      name: "Signals Data Park Two",
+      slug: `signals-data-two-${crypto.randomUUID().slice(0, 8)}`,
+      location: "POINT(-85.66 42.93)",
+      created_by: voter.id,
+      status: "published",
+    })
+    .select("id")
+    .single();
+  if (secondError) throw secondError;
+  otherSpotId = second.id;
+
+  // Both objects carry the same keys: PostgREST unions the keys of a bulk
+  // insert and nulls the gaps, bypassing column defaults.
+  const { error: linkError } = await admin.from("spot_shoot_types").insert([
+    { spot_id: spotId, shoot_type_id: familyId },
+    { spot_id: otherSpotId, shoot_type_id: familyId },
+  ]);
   if (linkError) throw linkError;
 });
 
 afterAll(async () => {
-  await serviceClient().from("spots").delete().eq("id", spotId);
+  // Throws rather than discarding the error, matching deleteTestUser: a silent
+  // cleanup failure here leaves a published spot on the local map.
+  const { error } = await serviceClient()
+    .from("spots")
+    .delete()
+    .in("id", [spotId, otherSpotId]);
+  if (error) throw error;
   await deleteTestUser(voter.id);
   await deleteTestUser(other.id);
 });
 
-const upvoteRef = { spotId: "", kind: "shoot_type_upvote" as const, shootTypeId: 0 };
-const againRef = { spotId: "", kind: "shoot_again" as const, shootTypeId: null };
+const upvote = (shootTypeId: number) =>
+  ({ spotId, kind: "shoot_type_upvote", shootTypeId }) as const;
+const shootAgain = () => ({ spotId, kind: "shoot_again", shootTypeId: null }) as const;
 
+// These tests share state and run in order: each builds on the votes cast by
+// the one before it.
 describe("getShootTypeVotes", () => {
   it("maps the RPC into camelCase rows a component can render", async () => {
     const rows = await getShootTypeVotes(anonClient(), spotId);
     expect(rows).toEqual([
-      { shootTypeId: familyId, slug: "family", label: "Family", upvoteCount: 0, viewerUpvoted: false },
+      {
+        shootTypeId: familyId,
+        slug: "family",
+        label: "Family",
+        upvoteCount: 0,
+        viewerUpvoted: false,
+      },
     ]);
   });
 });
 
 describe("castSignal", () => {
   it("records an upvote and reflects it back to the voter", async () => {
-    await castSignal(voter.client, { ...upvoteRef, spotId, shootTypeId: familyId });
+    await castSignal(voter.client, upvote(familyId));
 
     const rows = await getShootTypeVotes(voter.client, spotId);
     expect(rows[0].upvoteCount).toBe(1);
@@ -1018,19 +1057,17 @@ describe("castSignal", () => {
   });
 
   it("swallows a duplicate, because a double click is a no-op not an error (spec §9.2)", async () => {
-    await expect(
-      castSignal(voter.client, { ...upvoteRef, spotId, shootTypeId: familyId }),
-    ).resolves.toBeUndefined();
+    await expect(castSignal(voter.client, upvote(familyId))).resolves.toBeUndefined();
 
     const rows = await getShootTypeVotes(voter.client, spotId);
     expect(rows[0].upvoteCount).toBe(1);
   });
 
   it("flips a shoot-again answer in one call", async () => {
-    await castSignal(voter.client, { ...againRef, spotId }, 1);
+    await castSignal(voter.client, shootAgain(), 1);
     expect(await getViewerShootAgain(voter.client, spotId, voter.id)).toBe(1);
 
-    await castSignal(voter.client, { ...againRef, spotId }, 0);
+    await castSignal(voter.client, shootAgain(), 0);
     expect(await getViewerShootAgain(voter.client, spotId, voter.id)).toBe(0);
 
     const { data } = await serviceClient()
@@ -1041,16 +1078,17 @@ describe("castSignal", () => {
     expect(data).toEqual({ shoot_again_yes_count: 0, shoot_again_no_count: 1 });
   });
 
+  // A permission failure must surface, not be swallowed alongside duplicates.
   it("refuses a logged-out caller with a permission error, not a silent no-op", async () => {
-    await expect(
-      castSignal(anonClient(), { ...upvoteRef, spotId, shootTypeId: familyId }),
-    ).rejects.toMatchObject({ code: "42501" });
+    await expect(castSignal(anonClient(), upvote(familyId))).rejects.toMatchObject({
+      code: "42501",
+    });
   });
 });
 
 describe("isDuplicateSignal", () => {
   // Built from an error Postgres actually produced, not a hand-written object:
-  // the point of the predicate is that it matches the real SQLSTATE.
+  // the whole point of the predicate is that it matches the real SQLSTATE.
   it("recognises the unique violation the constraint raises", async () => {
     const insert = () =>
       other.client.from("signals").insert({
@@ -1089,30 +1127,50 @@ describe("isDuplicateSignal", () => {
 describe("retractSignal", () => {
   it("removes the caller's own vote and leaves everyone else's", async () => {
     // `other` upvoted family in the isDuplicateSignal test above.
-    await retractSignal(voter.client, { ...upvoteRef, spotId, shootTypeId: familyId });
+    await retractSignal(voter.client, upvote(familyId));
 
     const rows = await getShootTypeVotes(other.client, spotId);
     expect(rows[0].upvoteCount).toBe(1);
     expect(rows[0].viewerUpvoted).toBe(true);
   });
 
-  // RLS carries this rule, not an application check: signals_delete is
+  // RLS carries this rule, not an application filter: signals_delete is
   // `using (profile_id = auth.uid())`. A delete naming someone else's row
   // matches nothing rather than erroring, so assert on what survived.
   it("cannot delete somebody else's vote", async () => {
-    await retractSignal(voter.client, { ...upvoteRef, spotId, shootTypeId: familyId });
+    await retractSignal(voter.client, upvote(familyId));
 
-    const { count } = await serviceClient()
+    const { count, error } = await serviceClient()
       .from("signals")
       .select("id", { count: "exact", head: true })
       .eq("spot_id", spotId)
       .eq("profile_id", other.id)
       .eq("kind", "shoot_type_upvote");
+    expect(error).toBeNull();
     expect(count).toBe(1);
   });
 
+  // Without the spot filter the delete is scoped only by kind and shoot type,
+  // so taking back one upvote would silently remove the same vote from every
+  // other spot the user had upvoted for that shoot type.
+  it("retracts the vote on one spot only, not the same vote everywhere", async () => {
+    await castSignal(voter.client, upvote(familyId));
+    await castSignal(voter.client, { ...upvote(familyId), spotId: otherSpotId });
+
+    await retractSignal(voter.client, upvote(familyId));
+
+    const here = await getShootTypeVotes(voter.client, spotId);
+    const there = await getShootTypeVotes(voter.client, otherSpotId);
+    expect(here[0].viewerUpvoted).toBe(false);
+    expect(there[0].viewerUpvoted).toBe(true);
+  });
+
+  // shoot_again rows carry a null shoot_type_id, and `.eq(col, null)` sends
+  // `col=eq.null`, which matches nothing. This is the `.is` path.
   it("retracts a shoot-again answer, matching the null shoot_type_id", async () => {
-    await retractSignal(voter.client, { ...againRef, spotId });
+    expect(await getViewerShootAgain(voter.client, spotId, voter.id)).toBe(0);
+
+    await retractSignal(voter.client, shootAgain());
     expect(await getViewerShootAgain(voter.client, spotId, voter.id)).toBeNull();
   });
 });
@@ -1120,6 +1178,23 @@ describe("retractSignal", () => {
 describe("getViewerShootAgain", () => {
   it("returns null for a logged-out visitor without querying", async () => {
     expect(await getViewerShootAgain(anonClient(), spotId, null)).toBeNull();
+  });
+});
+
+// supabase-js returns errors, it does not throw. A mapper that ignores `error`
+// and reads `data` returns an empty list on failure, so the page renders "no
+// votes yet" for what is actually a broken query.
+describe("error propagation", () => {
+  it("throws when the summary RPC fails rather than returning nothing", async () => {
+    await expect(getShootTypeVotes(anonClient(), "not-a-uuid")).rejects.toMatchObject({
+      code: "22P02",
+    });
+  });
+
+  it("throws when the shoot-again lookup fails", async () => {
+    await expect(
+      getViewerShootAgain(anonClient(), "not-a-uuid", voter.id),
+    ).rejects.toMatchObject({ code: "22P02" });
   });
 });
 ```
@@ -1163,6 +1238,10 @@ interface SummaryRow {
   viewer_upvoted: boolean;
 }
 
+/**
+ * The rows come back already ordered by `sort_order`, so `sort_order` itself is
+ * dropped here rather than carried into the UI as a field nothing reads.
+ */
 export async function getShootTypeVotes(
   supabase: SupabaseClient,
   spotId: string,
@@ -1183,7 +1262,8 @@ export async function getShootTypeVotes(
  * The viewer's own "would you shoot here again?" answer, or null.
  *
  * Takes the profile id rather than calling `auth.getUser()`: the route already
- * has it, and a logged-out visitor should cost no round trip at all.
+ * has it from `getCurrentProfile`, and a logged-out visitor should cost no
+ * round trip at all.
  */
 export async function getViewerShootAgain(
   supabase: SupabaseClient,
@@ -1212,7 +1292,7 @@ const UNIQUE_VIOLATION = "23505";
  *
  * Checks the SQLSTATE rather than the message, which is localised and free to
  * change. Matching on "already exists" text would also catch a 42501, which is
- * a completely different failure.
+ * a completely different failure and must not be swallowed.
  */
 export const isDuplicateSignal = (error: PostgrestError | null): boolean =>
   error?.code === UNIQUE_VIOLATION;
@@ -1248,6 +1328,11 @@ export async function retractSignal(
   supabase: SupabaseClient,
   ref: SignalRef,
 ): Promise<void> {
+  // The `kind` filter is currently inert and no test can make it bite: the
+  // `signals_shape` check gives shoot_again rows a null shoot_type_id and
+  // upvotes a non-null one, so the shoot-type filter below already separates
+  // the two kinds. It stays as defence for the day a second kind carries a
+  // shoot type, which would make it load-bearing overnight.
   const query = supabase
     .from("signals")
     .delete()
@@ -1271,17 +1356,31 @@ export async function retractSignal(
 npm run test:db -- signals-data
 ```
 
-Expected: 11 passing. If "retracts a shoot-again answer" fails, the `.is` vs `.eq` distinction in `retractSignal` is the cause — that is the trap the comment names.
+Expected: 15 passing. If "retracts a shoot-again answer" fails, the `.is` vs `.eq` distinction in `retractSignal` is the cause — that is the trap the comment names.
 
 - [ ] **Step 5: Mutation-test the duplicate rule and the null filter**
 
+Run each against the committed file, confirming the mutation is genuinely installed before running the suite — a pattern that fails to match leaves the code unchanged and the suite green, which looks like a passing mutation test but is its opposite.
+
 | Mutation | Test that must go red |
 | --- | --- |
-| `if (error) throw error;` in `castSignal` (dropping the duplicate check) | none — `cast_signal` deletes before inserting, so this path is only reachable under concurrency |
-| `isDuplicateSignal` → `error !== null` | "does not mistake a permission error for a duplicate" |
+| `isDuplicateSignal` → `error !== null` | "does not mistake a permission error for a duplicate" **and** "refuses a logged-out caller with a permission error" |
+| Delete the `if (error && !isDuplicateSignal(error)) throw error;` line entirely | "refuses a logged-out caller with a permission error" |
 | `query.is("shoot_type_id", null)` → `query.eq("shoot_type_id", null)` | "retracts a shoot-again answer, matching the null shoot_type_id" |
+| Drop `.eq("spot_id", ref.spotId)` from `retractSignal` | "retracts the vote on one spot only, not the same vote everywhere" |
+| Drop the logged-out short circuit in `getViewerShootAgain` | "returns null for a logged-out visitor without querying" |
+| Drop `.eq("kind", "shoot_again")` from `getViewerShootAgain` | "flips a shoot-again answer in one call" **and** "retracts a shoot-again answer" |
+| `if (error) throw error;` → `if (false) …` in `getShootTypeVotes` | "throws when the summary RPC fails rather than returning nothing" |
+| `viewerUpvoted: row.viewer_upvoted` → `false` | "records an upvote and reflects it back to the voter" |
+| `if (error) throw error;` in `castSignal` (dropping only the duplicate check) | **nothing — survives** |
+| Drop `.eq("kind", ref.kind)` from `retractSignal` | **nothing — survives** |
 
-The first row is the honest result and is worth knowing: the duplicate swallow is a concurrency guard that the suite cannot deterministically provoke, which is exactly why `isDuplicateSignal` is tested directly against an error Postgres really raised. Record this in the commit message; do not add a fake test to paper over it.
+The two survivors are the honest result and both are worth knowing rather than papering over:
+
+- The duplicate swallow is a concurrency guard the suite cannot deterministically provoke, because `cast_signal` deletes before it inserts. That is exactly why `isDuplicateSignal` is tested directly against an error Postgres really raised, rather than through `castSignal`.
+- `retractSignal`'s `kind` filter is inert today: `signals_shape` gives `shoot_again` rows a null `shoot_type_id` and upvotes a non-null one, so the shoot-type filter already separates the kinds. It stays as defence for the day a second kind carries a shoot type, and the code says so.
+
+The spot-filter row is the one that matters most and is easy to miss: with a single-spot fixture it also survives, and the bug it hides is a user taking back one upvote and silently losing the same vote on every other spot. The fixture therefore builds **two** spots.
 
 - [ ] **Step 6: Commit**
 

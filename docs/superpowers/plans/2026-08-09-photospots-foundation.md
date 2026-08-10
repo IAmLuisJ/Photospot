@@ -3167,6 +3167,14 @@ export function createSupabaseServerClient(request: Request): SupabaseContext {
 }
 ```
 
+- [ ] **Step 5b: Test the Supabase server client**
+
+`supabase.server.ts` is load-bearing for tasks 13 and 14 and touches `@supabase/ssr`'s cookie API,
+whose shape has changed across versions. Create `app/lib/supabase.server.test.ts` covering: a request
+with no cookies; a well-formed `Cookie` header; a malformed one; and that two requests get separate
+`headers` objects so responses cannot bleed into each other. Set `SUPABASE_URL`/`SUPABASE_ANON_KEY`
+defaults in a `beforeAll`, since the `unit` project does not load `.env`.
+
 - [ ] **Step 6: Typecheck**
 
 Run: `npm run typecheck`

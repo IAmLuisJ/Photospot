@@ -272,8 +272,17 @@ afterAll(async () => {
   await deleteTestUser(author.id);
 });
 
-const insert = (fields: Record<string, unknown>) =>
-  serviceClient()
+/**
+ * Records every id the database hands back, not only the ones a test expected.
+ *
+ * The rejection tests below insert deliberately invalid rows, so if a
+ * constraint is ever missing — which is exactly the state a mutation test puts
+ * the database in — those inserts *succeed*. Collecting ids only on the happy
+ * path leaves them behind, and the next attempt to add the constraint fails
+ * with "is violated by some row" against rows nobody can find.
+ */
+const insert = async (fields: Record<string, unknown>) => {
+  const result = await serviceClient()
     .from("spots")
     .insert({
       kind: "outdoor",
@@ -287,14 +296,17 @@ const insert = (fields: Record<string, unknown>) =>
     .select("id")
     .single();
 
+  if (result.data?.id) spotIds.push(result.data.id);
+  return result;
+};
+
 describe("attribute vocabulary constraints", () => {
   it("accepts every value the domain layer offers", async () => {
-    const { data, error } = await insert({
+    const { error } = await insert({
       accessibility: ACCESSIBILITY_OPTIONS.map((o) => o.value),
       terrain: TERRAIN_OPTIONS.map((o) => o.value),
     });
     expect(error).toBeNull();
-    spotIds.push(data!.id);
   });
 
   it("rejects an accessibility value outside the vocabulary", async () => {
@@ -318,11 +330,9 @@ describe("attribute vocabulary constraints", () => {
   it("still accepts null and empty arrays", async () => {
     const nulls = await insert({ accessibility: null, terrain: null });
     expect(nulls.error).toBeNull();
-    spotIds.push(nulls.data!.id);
 
     const empties = await insert({ accessibility: [], terrain: [] });
     expect(empties.error).toBeNull();
-    spotIds.push(empties.data!.id);
   });
 
   it("leaves the seeded spots valid", async () => {
@@ -354,9 +364,17 @@ Create `supabase/migrations/20260811000011_attribute_vocabulary.sql`:
 -- half the map — and silently is the operative word, because both rows look
 -- perfectly reasonable in the table.
 --
--- `<@` is "is contained by". A null array yields null, which passes a check
--- constraint, so "nobody said" stays writable — that is the normal state for an
--- optional attribute (spec §4.7), not a problem to be constrained away.
+-- `<@` is "is contained by", not `&&` ("overlaps"). The two are one character
+-- apart and both look plausible, but `&&` is wrong in both directions: it
+-- accepts any array holding at least one valid value, and it *rejects* the
+-- empty array, because `'{}' && anything` is false. Measured against this
+-- database, `&&` cannot even be installed — two seeded spots record
+-- `accessibility = '{}'`, and the ALTER fails on them.
+--
+-- That distinction is the point. `'{}'` is "none of these apply" and null is
+-- "nobody said"; both are legitimate answers for an optional attribute
+-- (spec §4.7) and both stay writable here. A null array yields null, which
+-- passes a check constraint, and an empty array is contained by every array.
 --
 -- Kept in step with ACCESSIBILITY_OPTIONS and TERRAIN_OPTIONS in
 -- app/domain/spots/attributes.ts. Adding an option is deliberately two steps,
@@ -394,9 +412,11 @@ Expected: 6 passing.
 | Drop `spots_accessibility_vocabulary` | "rejects an accessibility value outside the vocabulary" and "rejects a value that differs only in case" |
 | Drop `spots_terrain_vocabulary` | "rejects a terrain value outside the vocabulary" |
 | Add `'teleporter'` to the accessibility array | "rejects an accessibility value outside the vocabulary" |
-| Change `<@` to `&&` | "rejects an accessibility value outside the vocabulary" — `&&` is "overlaps", so `['wheelchair','teleporter']` would pass |
+| Change `<@` to `&&` | **cannot be installed** — see below |
 
-The last row is the one worth running: `<@` and `&&` are one character apart and both look plausible, but `&&` accepts any array containing at least one valid value, which is no constraint at all.
+The last row turned out to be a stronger result than expected. `&&` is not merely a weaker constraint: `'{}' && anything` is false, so it rejects the empty array — "none of these apply", which is a legitimate answer distinct from "nobody said". Two seeded spots record `accessibility = '{}'`, so the `ALTER` fails against existing rows and the mutation cannot be installed at all. Record that rather than reporting a mutation that "passed".
+
+**The rejection tests insert deliberately invalid rows, so the fixture has to collect every id the database returns, not only the ones a test expected.** When a mutation drops the constraint those inserts *succeed*, and ids collected only on the happy path leave rows behind that then block restoring the constraint — "is violated by some row", against rows nothing in the test knows about. The `insert` helper pushes any id it gets back, for exactly this reason.
 
 - [ ] **Step 10: Commit**
 

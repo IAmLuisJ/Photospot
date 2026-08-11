@@ -15,9 +15,11 @@ Grand-Rapids-specific.
 
 ## Status
 
-**You can add spots and rate them.** Browse the map, filter by shoot type, submit a location with
-photos after a duplicate check, then upvote it for the kind of shoot it suits, answer "would you
-shoot here again?", and leave a comment. 333 tests. Filters and the remaining views are next.
+**You can add spots, rate them, and find them again.** Browse the map, narrow it to what will
+actually work — free, a short walk from parking, stroller-friendly — submit a location with photos
+after a duplicate check, then upvote it for the kind of shoot it suits, answer "would you shoot
+here again?", and leave a comment. Every filtered view is a shareable link. 440 tests. Reports and
+moderation are next.
 
 | | |
 | --- | --- |
@@ -27,7 +29,8 @@ shoot here again?", and leave a comment. 333 tests. Filters and the remaining vi
 | ✅ Explore | Viewport map, shoot-type filters, three views, spot detail |
 | ✅ Contribution | Submission with duplicate check, photo upload, editing, gallery links |
 | ✅ Voting & comments | Per-shoot-type upvotes, shoot-again, comments, live score |
-| ⬜ Next | Attribute filters, map and gallery views |
+| ✅ Filters & views | Cost, walk, accessibility and dog filters; remembered view; mobile sheet |
+| ⬜ Next | Reports, admin queue, studio claims |
 
 **Working on this?** Start with [`docs/STATUS.md`](docs/STATUS.md) for where things stand and what's
 next, and [`docs/ENGINEERING-NOTES.md`](docs/ENGINEERING-NOTES.md) for the traps this codebase has

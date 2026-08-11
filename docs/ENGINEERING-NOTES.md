@@ -41,6 +41,32 @@ A row-level policy cannot stop a user editing a *particular column* of a row the
   `GRANT UPDATE (display_name, avatar_url, …)` that omits `role`.
 - The same shape protects `spots.score`, the counter columns, and `spots.status`.
 
+### Changing a function's arguments means DROP, not `create or replace`
+
+Postgres keys functions by their **argument list**. `create or replace function f(a, b, c)` where
+`f(a, b)` already exists creates a *second overload*; it does not replace anything. PostgREST then
+cannot choose between them, and the old one — the one that ignores your new arguments — keeps
+serving existing callers.
+
+So: `drop function f(<exact old argument types>)` first. Two consequences follow.
+
+- **The drop takes the grants with it**, so the `revoke … from public` and every `grant` have to be
+  rewritten in the same migration.
+- **If the dropped signature does not match exactly, the drop is a silent no-op** and both versions
+  go live. Read the real one out of the catalogue rather than reconstructing it:
+
+  ```sql
+  select oid::regprocedure from pg_proc where proname = 'spots_in_viewport';
+  ```
+
+Audit the whole schema after any such migration; the expected result is no rows:
+
+```sql
+select p.proname, count(*) from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public' group by 1 having count(*) > 1;
+```
+
 ### Functions are executable by `PUBLIC` unless revoked
 
 Postgres grants `EXECUTE` on every new function to `PUBLIC`. Writing `grant execute … to
@@ -91,6 +117,32 @@ Two things worth knowing before writing the replacement:
   `comments.body` now carries a hard ceiling for the same reason. Keep the tunable product number
   in TypeScript and the abuse ceiling in the schema; they are two numbers with two jobs.
 
+### `<@` and `&&` are one character apart and mean opposite things for empty arrays
+
+Constraining a `text[]` to a vocabulary wants `<@` ("is contained by"). `&&` ("overlaps") is wrong
+in both directions: it accepts any array holding at least one valid value, and it **rejects the
+empty array**, because `'{}' && anything` is false.
+
+That second half is the one that bites. `'{}'` is "none of these apply" and `null` is "nobody
+said" — both legitimate answers for an optional attribute (spec §4.7). Measured here, `&&` could
+not even be installed: two seeded spots record `accessibility = '{}'` and the `ALTER` failed on
+them.
+
+Related: **an array column with no vocabulary drifts silently.** Nothing stops one contributor
+writing `wheelchair` and the next `Wheelchair accessible`, and a filter matching an exact string
+then misses half the map with no error anywhere. The vocabulary lives in `app/domain/spots/
+attributes.ts` and is mirrored by a check constraint — adding a value is deliberately two edits.
+
+### SQL's three-valued logic already excludes unknowns from a filter
+
+`null <= 20`, `null = any(...)` and `null @> array[...]` are all null, and a `WHERE` treats null as
+not-matching. So a filter predicate excludes rows where the attribute is unknown **without any
+explicit null check** — mutation-testing `s.walk_minutes is not null and …` showed removing it
+changes nothing.
+
+The exception is a boolean you are filtering *for*: `s.dog_friendly is true` excludes null, but
+`s.dog_friendly is not false` includes it. That one is load-bearing and the mutation proves it.
+
 ### `UNIQUE NULLS NOT DISTINCT` is required, not stylistic
 
 Postgres treats NULLs as distinct in unique constraints by default. `signals` allows one vote per
@@ -139,6 +191,19 @@ Given an array of objects, PostgREST takes the **union of keys** and explicitly 
 its `NOT NULL` constraint.
 
 **Every object in a bulk insert must carry the same keys.**
+
+### An update that RLS forbids reports no error — it matches zero rows
+
+`update … .eq("id", x)` against a row the policy excludes returns `error: null`. Nothing failed;
+nothing happened. A route that treats "no error" as "saved" then redirects to a success page having
+silently discarded everything the user typed.
+
+`.select("id")` on the update is what turns that into an answer: zero rows back means not
+permitted. `updateSpot` returns a boolean for exactly this reason.
+
+> **How it surfaced:** the edit form was reachable by any signed-in user on any spot, because the
+> detail page offers the link to everyone. Filling it in as a non-owner redirected to the spot page
+> looking successful. Found by driving the form while verifying something else.
 
 ### supabase-js returns errors, it does not throw
 

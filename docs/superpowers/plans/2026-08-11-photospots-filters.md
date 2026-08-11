@@ -95,7 +95,7 @@ So a filter milestone that only builds filters would ship controls that match se
 - Create: `supabase/migrations/20260811000011_attribute_vocabulary.sql`
 - Test: `tests/db/attribute-vocabulary.test.ts`
 
-- [ ] **Step 1: Write the failing domain test**
+- [x] **Step 1: Write the failing domain test**
 
 Create `app/domain/spots/attributes.test.ts`:
 
@@ -162,7 +162,7 @@ describe("vocabularies", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```bash
 npm run test:unit -- attributes
@@ -170,7 +170,7 @@ npm run test:unit -- attributes
 
 Expected: FAIL — `Failed to resolve import "./attributes"`.
 
-- [ ] **Step 3: Write the vocabulary**
+- [x] **Step 3: Write the vocabulary**
 
 Create `app/domain/spots/attributes.ts`:
 
@@ -242,7 +242,7 @@ export const isTerrainValue = (value: string): boolean =>
   TERRAIN_OPTIONS.some((o) => o.value === value);
 ```
 
-- [ ] **Step 4: Run the domain test**
+- [x] **Step 4: Run the domain test**
 
 ```bash
 npm run test:unit -- attributes
@@ -250,7 +250,7 @@ npm run test:unit -- attributes
 
 Expected: 7 passing.
 
-- [ ] **Step 5: Write the failing database test**
+- [x] **Step 5: Write the failing database test**
 
 Create `tests/db/attribute-vocabulary.test.ts`:
 
@@ -345,7 +345,7 @@ describe("attribute vocabulary constraints", () => {
 });
 ```
 
-- [ ] **Step 6: Run it and watch it fail**
+- [x] **Step 6: Run it and watch it fail**
 
 ```bash
 npm run test:db -- attribute-vocabulary
@@ -353,7 +353,7 @@ npm run test:db -- attribute-vocabulary
 
 Expected: the three rejection tests fail, because no constraint exists yet and every value is currently accepted. The acceptance tests pass already. A failure in "accepts every value the domain layer offers" instead means the fixture is wrong.
 
-- [ ] **Step 7: Write the constraint migration**
+- [x] **Step 7: Write the constraint migration**
 
 Create `supabase/migrations/20260811000011_attribute_vocabulary.sql`:
 
@@ -391,7 +391,7 @@ alter table public.spots add constraint spots_terrain_vocabulary
   ]::text[]);
 ```
 
-- [ ] **Step 8: Apply and verify**
+- [x] **Step 8: Apply and verify**
 
 ```bash
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH" && npx supabase db reset && npm run seed
@@ -405,7 +405,7 @@ npm run test:db -- attribute-vocabulary
 
 Expected: 6 passing.
 
-- [ ] **Step 9: Mutation-test the constraints**
+- [x] **Step 9: Mutation-test the constraints**
 
 | Mutation | Test that must go red |
 | --- | --- |
@@ -418,7 +418,7 @@ The last row turned out to be a stronger result than expected. `&&` is not merel
 
 **The rejection tests insert deliberately invalid rows, so the fixture has to collect every id the database returns, not only the ones a test expected.** When a mutation drops the constraint those inserts *succeed*, and ids collected only on the happy path leave rows behind that then block restoring the constraint — "is violated by some row", against rows nothing in the test knows about. The `insert` helper pushes any id it gets back, for exactly this reason.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add app/domain/spots/attributes.ts app/domain/spots/attributes.test.ts supabase/migrations/20260811000011_attribute_vocabulary.sql tests/db/attribute-vocabulary.test.ts
@@ -451,7 +451,7 @@ EOF
 
 Editing comes before submission because `updateSpot` already has the field-by-field shape to extend, and it gives the filters real data on existing spots immediately.
 
-- [ ] **Step 1: Write the failing component test**
+- [x] **Step 1: Write the failing component test**
 
 Create `app/components/spot/AttributeFields.test.tsx`:
 
@@ -547,7 +547,7 @@ describe("parseOptionalBool", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```bash
 npm run test:unit -- AttributeFields
@@ -555,7 +555,7 @@ npm run test:unit -- AttributeFields
 
 Expected: FAIL — `Failed to resolve import "./AttributeFields"`.
 
-- [ ] **Step 3: Write the component**
+- [x] **Step 3: Write the component**
 
 Create `app/components/spot/AttributeFields.tsx`:
 
@@ -700,7 +700,7 @@ export function AttributeFields({ current }: { current: AttributeValues }) {
 }
 ```
 
-- [ ] **Step 4: Run the component test**
+- [x] **Step 4: Run the component test**
 
 ```bash
 npm run test:unit -- AttributeFields
@@ -708,7 +708,7 @@ npm run test:unit -- AttributeFields
 
 Expected: 8 passing.
 
-- [ ] **Step 5: Extend `updateSpot`**
+- [x] **Step 5: Extend `updateSpot`**
 
 In `app/data/spot-writes.ts`, widen the `fields` parameter and the update object:
 
@@ -750,7 +750,7 @@ export async function updateSpot(
 
 The `!== undefined` guard is what separates "not on this form" from "cleared to null", and it is why every attribute has to be sent explicitly by the edit action rather than only when non-empty.
 
-- [ ] **Step 6: Add the database test**
+- [x] **Step 6: Add the database test**
 
 Append to `tests/db/spot-writes.test.ts`, inside the existing `describe("updateSpot", …)` if there is one, otherwise as a new block. Use the existing fixture's spot and author:
 
@@ -807,7 +807,7 @@ describe("updateSpot attributes", () => {
 });
 ```
 
-- [ ] **Step 7: Run it**
+- [x] **Step 7: Run it**
 
 ```bash
 npm run test:db -- spot-writes
@@ -815,7 +815,7 @@ npm run test:db -- spot-writes
 
 Expected: the existing tests plus 4 new ones passing.
 
-- [ ] **Step 8: Wire the edit route**
+- [x] **Step 8: Wire the edit route**
 
 In `app/routes/spots.$slug.edit.tsx`, import the component and its parsers:
 
@@ -849,11 +849,11 @@ Render `<AttributeFields current={{ costType: spot.costType, walkMinutes: spot.w
 
 Keep whatever fields the existing action already sends; this adds to them.
 
-- [ ] **Step 9: Verify in the browser**
+- [x] **Step 9: Verify in the browser**
 
 Start the preview server, sign in, open a seeded spot's edit page, set a cost and two accessibility values, save, and confirm the detail page shows them. Then clear them and confirm they disappear. Do not skip the clearing half — it is the half that `!== undefined` exists for.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add app/components/spot/AttributeFields.tsx app/components/spot/AttributeFields.test.tsx app/data/spot-writes.ts app/routes/spots.\$slug.edit.tsx tests/db/spot-writes.test.ts
@@ -883,7 +883,7 @@ EOF
 - Test: `app/domain/spots/submission.test.ts` (extend), `tests/db/rpcs.test.ts` (extend)
 - Modify: `supabase/migrations/20260811000012_attribute_filters.sql` — **no**; `create_spot` is in migration 8 and gains parameters here, so this task adds `supabase/migrations/20260811000013_create_spot_attributes.sql`
 
-- [ ] **Step 1: Read the current `create_spot` signature**
+- [x] **Step 1: Read the current `create_spot` signature**
 
 ```bash
 grep -n "create or replace function public.create_spot" -A 30 supabase/migrations/20260810000008_contribution.sql
@@ -891,7 +891,7 @@ grep -n "create or replace function public.create_spot" -A 30 supabase/migration
 
 You need its exact argument list, because changing it means dropping the old signature first — `create or replace` with a different argument list creates an **overload**, and PostgREST then cannot choose between them. Record the exact list before writing anything.
 
-- [ ] **Step 2: Write the failing domain test**
+- [x] **Step 2: Write the failing domain test**
 
 Append to `app/domain/spots/submission.test.ts`:
 
@@ -919,7 +919,7 @@ describe("submission attributes", () => {
 
 `valid()` is the existing helper in that file that builds a minimal passing submission; extend `SubmissionInput` with the optional attribute fields so these compile.
 
-- [ ] **Step 3: Run it, watch it fail, then extend `SubmissionInput` and `validateSubmission`**
+- [x] **Step 3: Run it, watch it fail, then extend `SubmissionInput` and `validateSubmission`**
 
 Add to `SubmissionInput` in `app/domain/spots/submission.ts`:
 
@@ -953,7 +953,7 @@ and to `validateSubmission`, before the `return`:
 
 with `import { isAccessibilityValue, isTerrainValue } from "./attributes";` at the top.
 
-- [ ] **Step 4: Extend `create_spot`**
+- [x] **Step 4: Extend `create_spot`**
 
 Create `supabase/migrations/20260811000013_create_spot_attributes.sql`. Drop the old signature by its exact argument list from step 1, then recreate it with the attribute parameters appended and re-grant it:
 
@@ -1077,7 +1077,7 @@ docker exec supabase_db_photospots psql -U postgres -d postgres -c \
 
 Expected: exactly one row. Two rows means the drop's argument list did not match the original and an overload is live.
 
-- [ ] **Step 5: Extend the RPC test**
+- [x] **Step 5: Extend the RPC test**
 
 **Correction to this plan:** there is no `create_spot` block in `tests/db/rpcs.test.ts`. `createSpot`
 is exercised through `tests/db/spot-writes.test.ts`, which already has a `submission()` fixture —
@@ -1123,11 +1123,11 @@ Append to `tests/db/spot-writes.test.ts`:
 
 `baseArgs()` is whatever the existing tests use to build a valid call; extract it as a helper if it is currently inline.
 
-- [ ] **Step 6: Pass the attributes through `createSpot` and the form**
+- [x] **Step 6: Pass the attributes through `createSpot` and the form**
 
 In `app/data/spot-writes.ts`, add the five parameters to the `supabase.rpc("create_spot", …)` call, mapping `input.costType ?? null` and so on. In `app/routes/submit.tsx`, render `<AttributeFields current={{ costType: null, walkMinutes: null, accessibility: [], terrain: [], dogFriendly: null }} />` inside the existing `<details>` block and read the values in the action with `checkedValuesFrom` and `parseOptionalInt`.
 
-- [ ] **Step 7: Run everything, then verify by submitting a real spot**
+- [x] **Step 7: Run everything, then verify by submitting a real spot**
 
 ```bash
 npm test && npm run typecheck
@@ -1135,7 +1135,7 @@ npm test && npm run typecheck
 
 Then submit a spot through the browser with a cost, a walk time and two accessibility values, and confirm the detail page shows them. A spot submitted without any attributes must still save — that is the "all optional" rule from spec §4.7.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add supabase/migrations/20260811000013_create_spot_attributes.sql app/domain/spots/submission.ts app/domain/spots/submission.test.ts app/data/spot-writes.ts app/routes/submit.tsx tests/db/rpcs.test.ts
@@ -1163,7 +1163,7 @@ EOF
 **Files:**
 - Create: `app/domain/filters/attribute-filters.ts`, `app/domain/filters/attribute-filters.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `app/domain/filters/attribute-filters.test.ts`:
 
@@ -1290,7 +1290,7 @@ describe("hasAnyAttributeFilter", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```bash
 npm run test:unit -- attribute-filters
@@ -1298,7 +1298,7 @@ npm run test:unit -- attribute-filters
 
 Expected: FAIL — `Failed to resolve import "./attribute-filters"`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `app/domain/filters/attribute-filters.ts`:
 
@@ -1383,7 +1383,7 @@ export function hasAnyAttributeFilter(filters: AttributeFilters): boolean {
 }
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 ```bash
 npm run test:unit -- attribute-filters
@@ -1391,7 +1391,7 @@ npm run test:unit -- attribute-filters
 
 Expected: 17 passing.
 
-- [ ] **Step 5: Mutation-test**
+- [x] **Step 5: Mutation-test**
 
 | Mutation | Test that must go red |
 | --- | --- |
@@ -1402,7 +1402,7 @@ Expected: 17 passing.
 | `Number.isInteger(walk) && walk >= 0` → `!Number.isNaN(walk)` | "ignores a walk time that is not a non-negative integer" |
 | Remove one clause from `hasAnyAttributeFilter`'s `||` chain | "is true for any single filter" |
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/domain/filters/attribute-filters.ts app/domain/filters/attribute-filters.test.ts
@@ -1431,7 +1431,7 @@ EOF
 - Modify: `app/domain/filters/explore-filters.ts`, `app/domain/filters/explore-filters.test.ts`, `app/data/spots.ts`
 - Test: `tests/db/attribute-filtering.test.ts`
 
-- [ ] **Step 1: Write the failing database test**
+- [x] **Step 1: Write the failing database test**
 
 Create `tests/db/attribute-filtering.test.ts`:
 
@@ -1577,7 +1577,7 @@ describe("spots_in_viewport attribute filters", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```bash
 npm run test:db -- attribute-filtering
@@ -1585,7 +1585,7 @@ npm run test:db -- attribute-filtering
 
 Expected: the unfiltered test passes; every filtered one fails with `PGRST202`, because the parameters do not exist.
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
 Create `supabase/migrations/20260811000012_attribute_filters.sql`:
 
@@ -1704,7 +1704,7 @@ grant execute on function public.spots_in_viewport(
 ) to anon, authenticated, service_role;
 ```
 
-- [ ] **Step 4: Apply, then confirm there is exactly one overload**
+- [x] **Step 4: Apply, then confirm there is exactly one overload**
 
 ```bash
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH" && npx supabase db reset && npm run seed
@@ -1720,7 +1720,7 @@ npm run test:db -- attribute-filtering
 
 Expected: 11 passing.
 
-- [ ] **Step 5: Decide about indexes by measuring, not by assuming**
+- [x] **Step 5: Decide about indexes by measuring, not by assuming**
 
 Spec §4.7 says these columns are indexable "which is the entire purpose of these fields". That is an argument for the column shape, not proof that an index earns its keep today: the query is already gated by a highly selective GIST viewport intersection, and at six seeded rows Postgres will sequentially scan whatever you build.
 
@@ -1739,7 +1739,7 @@ Note also that the filtered query is *faster* than the unfiltered one (5.4 ms ag
 
 Delete the synthetic rows afterwards and confirm the count is back where it started.
 
-- [ ] **Step 6: Thread the filters through the domain and data layers**
+- [x] **Step 6: Thread the filters through the domain and data layers**
 
 In `app/domain/filters/explore-filters.ts`, add `attributes: AttributeFilters` to `ExploreFilters` and `NO_ATTRIBUTE_FILTERS` to `DEFAULT_FILTERS`, then compose the two parsers:
 
@@ -1790,13 +1790,13 @@ In `app/data/spots.ts`, pass the new arguments:
 
 Note `dogFriendlyOnly ? true : null` rather than passing the boolean straight through: `false` would otherwise read as "show me spots that are not dog friendly", which is not a filter anyone asked for.
 
-- [ ] **Step 7: Run everything**
+- [x] **Step 7: Run everything**
 
 ```bash
 npm test && npm run typecheck
 ```
 
-- [ ] **Step 8: Mutation-test the SQL**
+- [x] **Step 8: Mutation-test the SQL**
 
 | Mutation | Test that must go red |
 | --- | --- |
@@ -1806,7 +1806,7 @@ npm test && npm run typecheck
 | `not coalesce(p_dog_friendly, false) or s.dog_friendly is true` → `s.dog_friendly is not false` | "filters to dog-friendly spots" **and** "excludes spots where the attribute is unknown" — the one null check that is genuinely load-bearing |
 | `p_max_walk_minutes` comparison `<=` → `<` | "filters by an upper bound on the walk" |
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add supabase/migrations/20260811000012_attribute_filters.sql app/domain/filters/ app/data/spots.ts tests/db/attribute-filtering.test.ts
@@ -1840,7 +1840,7 @@ EOF
 - Create: `app/components/explore/FilterBar.tsx`, `app/components/explore/FilterBar.test.tsx`
 - Modify: `app/routes/home.tsx`, `app/app.css`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `app/components/explore/FilterBar.test.tsx`:
 
@@ -1921,7 +1921,7 @@ describe("hiddenByFiltersMessage", () => {
 });
 ```
 
-- [ ] **Step 2: Run it, watch it fail, then write the component**
+- [x] **Step 2: Run it, watch it fail, then write the component**
 
 Create `app/components/explore/FilterBar.tsx`:
 
@@ -2057,7 +2057,7 @@ export function FilterBar({
 
 Every control is uncontrolled-by-URL on purpose: `onChange` hands the whole next filter object up to `home.tsx`, which writes it to the URL, and the value comes back down through the loader. One direction, so a control cannot disagree with the address bar.
 
-- [ ] **Step 3: Supply the hidden count**
+- [x] **Step 3: Supply the hidden count**
 
 The loader knows how many spots are in the viewport unfiltered and how many survive the filters. Rather than a second full query, run the count query only when `hasAnyAttributeFilter(filters.attributes)` is true:
 
@@ -2069,11 +2069,11 @@ The loader knows how many spots are in the viewport unfiltered and how many surv
 
 Note the `500`: the cap makes this an undercount on a busy viewport, which is acceptable for a hint but must not be presented as an exact figure. Word the message accordingly and say so in a comment.
 
-- [ ] **Step 4: Wire into `home.tsx`, style, and verify in the browser**
+- [x] **Step 4: Wire into `home.tsx`, style, and verify in the browser**
 
 Add `<FilterBar …/>` to the controls. Confirm by hand: filtering to *free* + *stroller* narrows the seeded map, the URL carries `cost=free&access=stroller`, reloading that URL reproduces the same view, and clearing restores everything.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/components/explore/FilterBar.tsx app/components/explore/FilterBar.test.tsx app/routes/home.tsx app/app.css
@@ -2101,7 +2101,7 @@ EOF
 
 Spec §8: the view is "selected by a `?view=` parameter and remembered per user".
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `app/lib/view-preference.server.test.ts`:
 
@@ -2162,7 +2162,7 @@ describe("viewPreferenceCookie", () => {
 });
 ```
 
-- [ ] **Step 2: Run it, watch it fail, then implement**
+- [x] **Step 2: Run it, watch it fail, then implement**
 
 Create `app/lib/view-preference.server.ts`:
 
@@ -2199,7 +2199,7 @@ export function resolveView(fromUrl: string | null, fromCookie: string | null): 
 }
 ```
 
-- [ ] **Step 3: Wire the loader**
+- [x] **Step 3: Wire the loader**
 
 In `home.tsx`, read the raw `view` param before `parseExploreFilters` normalises it, resolve it against the cookie, and set the cookie when the URL supplied one:
 
@@ -2216,7 +2216,7 @@ In `home.tsx`, read the raw `view` param before `parseExploreFilters` normalises
 
 `headers` is the object `createSupabaseServerClient` already returned — append to it rather than building a second one, or the Supabase session cookies are dropped and the user is silently signed out on the next request.
 
-- [ ] **Step 4: Verify by hand**
+- [x] **Step 4: Verify by hand**
 
 Choose gallery, close the tab, reopen `/` with no query string, and confirm gallery renders **server-side** — check the markup with `curl`, not the rendered page, since a client-side correction looks identical while producing a flash of the wrong layout. `curl -c jar -b jar` against `/?view=gallery` then `/` is enough; grep for `explore--gallery` in the HTML.
 
@@ -2224,7 +2224,7 @@ Then open `/?view=split` and confirm split wins, and that clicking between views
 
 **Note what this does to the stored preference, and check it rather than assuming.** Following someone else's `?view=split` link overwrites your remembered choice, because the loader cannot tell a click from a shared link — the view buttons set the same search parameter. Distinguishing them would mean posting to an action on click, a round trip on every view switch. Left as is; the comment in the loader says so, and a `curl -c jar -b jar` sequence confirms the cookie really does change.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/lib/view-preference.server.ts app/lib/view-preference.server.test.ts app/routes/home.tsx
@@ -2255,7 +2255,7 @@ EOF
 
 Spec §8: gallery is "a photo grid with the map behind a tab", and on mobile all three views "collapse to a full-screen map with a draggable results sheet".
 
-- [ ] **Step 1: Write the failing sheet test**
+- [x] **Step 1: Write the failing sheet test**
 
 Create `app/domain/explore/results-sheet.test.ts`:
 
@@ -2317,7 +2317,7 @@ describe("nextSnap", () => {
 });
 ```
 
-- [ ] **Step 2: Implement, run, and mutation-test**
+- [x] **Step 2: Implement, run, and mutation-test**
 
 Create `app/domain/explore/results-sheet.ts`:
 
@@ -2370,11 +2370,11 @@ Run `npm run test:unit -- results-sheet`; expected 8 passing. Then mutate:
 | `Math.trunc(-deltaY / STEP_PIXELS)` → `Math.sign(-deltaY)` | "crosses two stops on a long drag" |
 | `Math.trunc` → `Math.round` | "returns to where it started when the drag is under one step" |
 
-- [ ] **Step 3: Add the gallery map tab**
+- [x] **Step 3: Add the gallery map tab**
 
 In `ExploreLayout`, gallery currently omits the map entirely. Give it a tab pair — *Photos* and *Map* — with `aria-pressed` on the active one, rendering the grid or the map. Extend `ExploreLayout.test.tsx`'s existing `layoutClass` coverage with the tab state, keeping to exported pure helpers since the unit project has no DOM.
 
-- [ ] **Step 4: Add the mobile sheet**
+- [x] **Step 4: Add the mobile sheet**
 
 Below 768px, all three views render the map full-screen with `ResultsSheet` over it. The view pills are hidden below that width — spec §8 makes the view choice desktop-only.
 
@@ -2464,7 +2464,7 @@ In `app.css`, `touch-action: none` goes on `.results-sheet__handle` **only**. On
 
 `height` is transitioned rather than `transform` because the body's scroll height has to match the visible height — transforming would leave the list scrollable behind the screen edge.
 
-- [ ] **Step 5: Verify at both sizes**
+- [x] **Step 5: Verify at both sizes**
 
 Resize the preview to mobile (375×812) and confirm: the map fills the screen, the sheet drags between the three snap points, a flick works, the results scroll inside the sheet at full height, and the view pills are gone. Then desktop, and confirm all three views are unchanged from before this task.
 
@@ -2475,7 +2475,7 @@ Resize the preview to mobile (375×812) and confirm: the map fills the screen, t
 
 Note that the preview pane's viewport emulation can report `document.documentElement.clientWidth` and `window.innerWidth` inconsistently (375 against 899 here), which makes a naive `scrollWidth > clientWidth` overflow check unreliable. Measure fit against `innerWidth` — the viewport the page was actually laid out in — and confirm `matchMedia('(max-width: 767px)').matches` before trusting any mobile measurement at all.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/domain/explore/ app/components/explore/ app/app.css
@@ -2503,7 +2503,7 @@ EOF
 - Modify: `docs/STATUS.md`, `README.md`, this plan
 - Possibly modify: `docs/ENGINEERING-NOTES.md`
 
-- [ ] **Step 1: Full suite, typecheck, build**
+- [x] **Step 1: Full suite, typecheck, build**
 
 ```bash
 npm test && npm run typecheck && npm run build
@@ -2511,7 +2511,7 @@ npm test && npm run typecheck && npm run build
 
 Record the test count.
 
-- [ ] **Step 2: Replay every migration from empty**
+- [x] **Step 2: Replay every migration from empty**
 
 ```bash
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH" && npx supabase db reset && npm run seed && npm run test:db
@@ -2519,7 +2519,7 @@ export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH" && npx supab
 
 This is the check that the vocabulary constraints and the two dropped-and-recreated functions survive a clean replay. A migration that only works against an already-migrated database is a migration that will fail on the hosted project.
 
-- [ ] **Step 3: Confirm no function has a stray overload**
+- [x] **Step 3: Confirm no function has a stray overload**
 
 ```bash
 docker exec supabase_db_photospots psql -U postgres -d postgres -c \
@@ -2530,21 +2530,21 @@ docker exec supabase_db_photospots psql -U postgres -d postgres -c \
 
 Expected: no rows. Any function listed twice is an overload PostgREST may resolve either way.
 
-- [ ] **Step 4: Drive the whole flow in the browser**
+- [x] **Step 4: Drive the whole flow in the browser**
 
 Sign in, edit a seeded spot to add a cost and two accessibility values, then from the map: filter to those values and confirm the spot is found; add a filter nothing matches and confirm the hidden-spots message appears rather than a bare empty state; copy the URL, open it in a fresh tab, and confirm the same filtered view renders. Submit a new spot with attributes and confirm it is immediately findable by them.
 
-- [ ] **Step 5: Update `docs/STATUS.md`**
+- [x] **Step 5: Update `docs/STATUS.md`**
 
 Move milestone 5 to ✅ and mark 6 as Next. Update the test count, the migration count and the `app/` inventory. Add to "Known gaps": whatever the index measurement in task 5 concluded, and the fact that the hidden-spots count is capped at 500 and so undercounts on a busy viewport. Remove the note about attribute filters being unbuilt.
 
-- [ ] **Step 6: Update `README.md`** in the same voice as the existing entries.
+- [x] **Step 6: Update `README.md`** in the same voice as the existing entries.
 
-- [ ] **Step 7: Sync this plan** — tick every checkbox, and add a "What diverged" table naming each place the implementation differed from the plan and why, as plan 4 does. Where the divergence came from a defect in this plan's own text, say so.
+- [x] **Step 7: Sync this plan** — tick every checkbox, and add a "What diverged" table naming each place the implementation differed from the plan and why, as plan 4 does. Where the divergence came from a defect in this plan's own text, say so.
 
-- [ ] **Step 8: Add any new trap to `docs/ENGINEERING-NOTES.md`** — only if this plan hit a real one. The overload trap in tasks 3 and 5 is the likeliest candidate, and only if it actually bit. Do not add anything merely anticipated; every entry in that file is a bug that shipped or nearly shipped, and padding it with hypotheticals is how it stops being read.
+- [x] **Step 8: Add any new trap to `docs/ENGINEERING-NOTES.md`** — only if this plan hit a real one. The overload trap in tasks 3 and 5 is the likeliest candidate, and only if it actually bit. Do not add anything merely anticipated; every entry in that file is a bug that shipped or nearly shipped, and padding it with hypotheticals is how it stops being read.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add docs/ README.md
@@ -2558,6 +2558,34 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 EOF
 )"
 ```
+
+---
+
+## What diverged from the plan as written
+
+Every code block above was re-synced to the file that was actually committed. The changes worth
+naming, because each came from a defect the plan or the code contained:
+
+| Where | What the plan said | What was built, and why |
+| --- | --- | --- |
+| Task 1 | `&&` would be a weaker constraint the test catches | `&&` cannot be *installed*: `'{}' && anything` is false and two seeded spots record an empty accessibility array. Stronger evidence for `<@` than the test would have been. |
+| Task 1 | Fixture collects ids from successful inserts | Collects **every** id the database returns. With a constraint dropped — the state a mutation test creates — the rejection tests' inserts succeed, and ids gathered only on the happy path leave rows that then block restoring the constraint. |
+| Task 2 | Dogs is a checkbox | A tri-state select. An unchecked box collapses to false, so every contributor who ignored it would publish "Dog friendly: No" — asserting something they never said. |
+| Task 2 | — | `updateSpot` returns whether a row changed, and the edit action says so. RLS matches zero rows for a non-owner with no error, so the form redirected as though it had saved. Reachable by every signed-in user on every spot. |
+| Task 3 | Tests go in `rpcs.test.ts`'s `create_spot` block | No such block exists; `createSpot` is exercised through `spot-writes.test.ts`, which already has the fixture. |
+| Task 4 | `v !== ""` guard is load-bearing | It survives mutation — both validators already reject the empty string. Kept for the next filter field and the code says so. |
+| Task 4 | — | Added `dogs=0` coverage: `params.get("dogs") !== null` passed the whole suite, so hand-editing a shared link to switch the filter *off* would have switched it on. |
+| Task 5 | `s.walk_minutes is not null` excludes unknowns | Redundant — `null <= 20` is null and a `WHERE` already excludes it, which is how the cost and accessibility predicates exclude unknowns too. The dogs predicate is the one genuinely load-bearing null check. |
+| Task 5 | Measure, then decide on indexes | Measured at 5000 rows: GIN on `accessibility` *is* used but buys ~11% against a write cost on every vote. No index; numbers recorded in the migration. |
+| Task 6 | "N spots hidden because nobody has filled in the detail" | Wrong in the common case — with the seeded data every hidden spot had its data filled in and simply did not match. The count cannot tell the two apart, so the copy states the number and offers missing data as a possibility. |
+| Task 7 | Following a shared link would not rewrite the preference | It does. The loader cannot tell a click from a shared link; both set the same search parameter. Behaviour kept, comment corrected. |
+| Task 8 | No mobile treatment for the filters | The pills came to ~800px and hid the map spec §8 wants full-screen. Rows scroll sideways, and needed `min-width: 0` — a flex item keeps `min-width: auto` and would push the page wider instead of scrolling internally. |
+
+**A note on the tooling.** The preview pane's viewport emulation degraded partway through (reporting
+`innerWidth` 899 against `clientWidth` 375, and later 0×0, which forces the mobile media query).
+Late verification therefore ran against server-rendered HTML via `curl` instead. Confirm
+`matchMedia('(max-width: 767px)').matches` and measure fit against `innerWidth` before trusting any
+mobile measurement from that pane.
 
 ---
 

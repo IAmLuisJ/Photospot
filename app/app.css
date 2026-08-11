@@ -132,7 +132,52 @@ body {
 .spot-detail__facts dt { font-weight: 600; }
 .spot-detail__facts dd { margin: 0; }
 .spot-detail__fact { display: contents; }
-.spot-detail__pending { margin-top: 2rem; opacity: 0.6; font-size: 0.9rem; }
+/* ---- Votes and comments ---- */
+
+.vote-panel { margin-top: 2rem; }
+.vote-panel h2, .comments h2 { font-size: 1.05rem; margin-bottom: 0.5rem; }
+.vote-panel ul { list-style: none; padding: 0; margin: 0 0 1.25rem; display: grid; gap: 0.4rem; }
+
+.vote-panel__row { display: flex; align-items: center; gap: 0.6rem; }
+.vote-panel__label { min-width: 9rem; }
+/* Tabular figures so a count going 9 → 10 does not shift the button sideways. */
+.vote-panel__count { font-variant-numeric: tabular-nums; opacity: 0.7; min-width: 1.5rem; }
+.vote-panel__again { font-size: 0.9rem; opacity: 0.8; margin: 0 0 0.5rem; }
+.vote-panel__again-form { display: flex; gap: 0.4rem; align-items: center; flex-wrap: wrap; }
+
+/* Same pill shape as the explore controls, including the aria-pressed state —
+   the pressed style is driven by the accessibility attribute rather than a
+   parallel class, so the two cannot disagree. */
+.vote-panel button {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid rgb(0 0 0 / 0.2);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+.vote-panel button[aria-pressed="true"] {
+  background: #1f2937;
+  color: white;
+  border-color: #1f2937;
+}
+.vote-panel [role="alert"] { color: #b42318; font-size: 0.85rem; }
+
+.comments { margin-top: 2rem; }
+.comments__list { list-style: none; padding: 0; margin: 0; display: grid; gap: 1rem; }
+.comments__byline { font-size: 0.8rem; opacity: 0.65; margin: 0 0 0.15rem; }
+.comments__body { margin: 0; white-space: pre-wrap; }
+.comments__form { display: grid; gap: 0.5rem; margin-top: 1.25rem; }
+.comments__form label { display: grid; gap: 0.25rem; font-size: 0.9rem; }
+.comments__form textarea {
+  padding: 0.4rem 0.5rem; border: 1px solid rgb(0 0 0 / 0.25); border-radius: 6px; font: inherit;
+}
+.comments__form button[type="submit"] {
+  justify-self: start; padding: 0.5rem 1.1rem; border-radius: 6px;
+  border: 1px solid #1f2937; background: #1f2937; color: white; font: inherit; cursor: pointer;
+}
+.comments__form button[type="submit"]:disabled { opacity: 0.55; cursor: default; }
+.comments__form [role="alert"] { color: #b42318; font-size: 0.85rem; margin: 0; }
 
 /* ---- Submission ---- */
 

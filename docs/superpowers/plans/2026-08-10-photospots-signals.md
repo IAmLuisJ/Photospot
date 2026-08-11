@@ -2294,7 +2294,12 @@ Create `app/components/spot/VotePanel.test.tsx`:
 
 ```ts
 import { describe, it, expect } from "vitest";
-import { pendingUpvoteFrom, pendingShootAgainFrom, upvoteLabel } from "./VotePanel";
+import {
+  pendingUpvoteFrom,
+  pendingShootAgainFrom,
+  upvoteLabel,
+  voteTotalsLine,
+} from "./VotePanel";
 
 const form = (entries: Record<string, string>): FormData => {
   const data = new FormData();
@@ -2324,6 +2329,16 @@ describe("pendingUpvoteFrom", () => {
   it("ignores a submission for a different intent", () => {
     expect(pendingUpvoteFrom(form({ intent: "comment", body: "hi" }))).toBeNull();
   });
+
+  // Number("") is 0, not NaN, so a missing field would otherwise be read as a
+  // pending vote on shoot type 0 rather than as nothing in flight.
+  it("ignores a submission with no shoot type on it", () => {
+    expect(pendingUpvoteFrom(form({ intent: "upvote" }))).toBeNull();
+  });
+
+  it("ignores a shoot type that is not a number", () => {
+    expect(pendingUpvoteFrom(form({ intent: "upvote", shootTypeId: "family" }))).toBeNull();
+  });
 });
 
 describe("pendingShootAgainFrom", () => {
@@ -2342,17 +2357,60 @@ describe("pendingShootAgainFrom", () => {
   it("ignores a submission for a different intent", () => {
     expect(pendingShootAgainFrom(form({ intent: "upvote", shootTypeId: "1" }))).toBeUndefined();
   });
+
+  it("treats an unrecognised answer as nothing in flight", () => {
+    expect(pendingShootAgainFrom(form({ intent: "shoot-again", answer: "maybe" }))).toBeUndefined();
+  });
 });
 
 describe("upvoteLabel", () => {
   it("offers to add a vote", () => {
-    expect(upvoteLabel({ shootTypeId: 1, label: "Family", upvoteCount: 2, viewerUpvoted: false }))
-      .toBe("Upvote Family");
+    expect(
+      upvoteLabel({ shootTypeId: 1, label: "Family", upvoteCount: 2, viewerUpvoted: false }),
+    ).toBe("Upvote Family");
   });
 
   it("offers to take it back once cast", () => {
-    expect(upvoteLabel({ shootTypeId: 1, label: "Family", upvoteCount: 3, viewerUpvoted: true }))
-      .toBe("Remove your Family upvote");
+    expect(
+      upvoteLabel({ shootTypeId: 1, label: "Family", upvoteCount: 3, viewerUpvoted: true }),
+    ).toBe("Remove your Family upvote");
+  });
+});
+
+describe("voteTotalsLine", () => {
+  const totals = (over = {}) => ({
+    shootTypeUpvoteCount: 4,
+    shootAgainYesCount: 2,
+    shootAgainNoCount: 0,
+    ...over,
+  });
+
+  it("summarises the lifetime counts", () => {
+    expect(voteTotalsLine(totals())).toBe("4 upvotes · 2 would shoot here again");
+  });
+
+  // This line predates voting, so every count was necessarily zero and the
+  // plural read correctly by accident.
+  it("says one upvote, not one upvotes", () => {
+    expect(voteTotalsLine(totals({ shootTypeUpvoteCount: 1 }))).toBe(
+      "1 upvote · 2 would shoot here again",
+    );
+  });
+
+  it("still says upvotes for none", () => {
+    expect(voteTotalsLine(totals({ shootTypeUpvoteCount: 0 }))).toContain("0 upvotes");
+  });
+
+  // Nobody has said no is the common case, and the clause would read oddly at
+  // zero — "0 would not" invites the reader to wonder who did.
+  it("omits the dissent clause when there is none", () => {
+    expect(voteTotalsLine(totals())).not.toContain("would not");
+  });
+
+  it("includes the dissent clause when there is some", () => {
+    expect(voteTotalsLine(totals({ shootAgainNoCount: 3 }))).toBe(
+      "4 upvotes · 2 would shoot here again · 3 would not",
+    );
   });
 });
 ```
@@ -2362,8 +2420,9 @@ Create `app/components/spot/CommentThread.test.tsx`:
 ```ts
 import { describe, it, expect } from "vitest";
 import { commentByline } from "./CommentThread";
+import type { SpotComment } from "~/data/comments";
 
-const comment = (over = {}) => ({
+const comment = (over: Partial<SpotComment> = {}): SpotComment => ({
   id: "c1",
   body: "Parking fills up by nine.",
   createdAt: "2026-08-10T17:30:00.000Z",
@@ -2384,11 +2443,12 @@ describe("commentByline", () => {
     );
   });
 
-  // A locale-formatted date would make this test pass or fail depending on the
-  // machine running it.
+  // A locale-formatted date would render differently for the reader than for
+  // the test, which is the kind of thing that only fails on someone else's
+  // machine. This one is fixed in UTC — late-evening UTC must not roll forward.
   it("formats the date in UTC, so the byline does not move with the reader", () => {
-    expect(commentByline(comment({ createdAt: "2026-08-10T23:30:00.000Z" }))).toContain(
-      "2026-08-10",
+    expect(commentByline(comment({ createdAt: "2026-08-10T23:30:00.000Z" }))).toBe(
+      "Dana · 2026-08-10",
     );
   });
 });
@@ -2421,15 +2481,20 @@ import type { ShootTypeVotes } from "~/data/signals";
 /**
  * The state a submission is asking for, read back out of the in-flight form.
  *
- * `fetcher.formData` rather than a useState mirror: React Router already holds
- * the pending submission, and a second copy of it is a second thing to keep in
- * sync — which is where optimistic UI usually goes wrong.
+ * `fetcher.formData` rather than a `useState` mirror: React Router already
+ * holds the pending submission, and a second copy of it is a second thing to
+ * keep in sync — which is where optimistic UI usually goes wrong.
  */
 export function pendingUpvoteFrom(formData: FormData | undefined): PendingUpvote | null {
   const intent = formData?.get("intent");
   if (intent !== "upvote" && intent !== "unvote") return null;
 
-  const shootTypeId = Number(formData?.get("shootTypeId"));
+  // Number("") is 0, not NaN, so a missing field would read as a pending vote
+  // on shoot type 0 rather than as nothing in flight.
+  const raw = formData?.get("shootTypeId");
+  if (typeof raw !== "string" || raw.trim() === "") return null;
+
+  const shootTypeId = Number(raw);
   if (!Number.isInteger(shootTypeId)) return null;
 
   return { shootTypeId, upvoted: intent === "upvote" };
@@ -2451,11 +2516,32 @@ export function upvoteLabel(row: ShootTypeVoteState): string {
 }
 
 /**
- * Its own fetcher per row, so one pending vote does not grey out the others.
+ * The lifetime totals above the breakdown. Separate from the panel's per-type
+ * rows: this answers "how much has happened here at all", the rows answer
+ * "what is it good for".
+ *
+ * Reads "1 upvote", not "1 upvotes" — the line was written when every count was
+ * necessarily zero, so the plural was invisible until voting existed.
+ */
+export function voteTotalsLine(totals: {
+  shootTypeUpvoteCount: number;
+  shootAgainYesCount: number;
+  shootAgainNoCount: number;
+}): string {
+  const upvotes = `${totals.shootTypeUpvoteCount} ${
+    totals.shootTypeUpvoteCount === 1 ? "upvote" : "upvotes"
+  }`;
+  const parts = [upvotes, `${totals.shootAgainYesCount} would shoot here again`];
+  if (totals.shootAgainNoCount > 0) parts.push(`${totals.shootAgainNoCount} would not`);
+  return parts.join(" · ");
+}
+
+/**
+ * Its own fetcher per row, so one pending vote does not freeze the others.
  *
  * Typed as `{ error?: string }` rather than `typeof action`: importing the
  * route's action type into a component the route imports is a cycle, and the
- * error shape is the only part of the response this needs.
+ * error is the only part of the response this reads.
  */
 function ShootTypeRow({ row, signedIn }: { row: ShootTypeVotes; signedIn: boolean }) {
   const fetcher = useFetcher<{ error?: string }>();
@@ -2546,7 +2632,7 @@ import { MAX_COMMENT_LENGTH } from "~/domain/comments/comment";
 
 /**
  * ISO date, sliced, not `toLocaleDateString`: a locale-formatted byline renders
- * differently for the reader than for the test, and this is the kind of thing
+ * differently for the reader than for the test, and that is the kind of thing
  * that only fails on somebody else's machine.
  */
 export function commentByline(comment: SpotComment): string {
@@ -2607,7 +2693,7 @@ export function CommentThread({
 npm run test:unit -- VotePanel CommentThread
 ```
 
-Expected: 12 passing.
+Expected: 20 passing.
 
 - [ ] **Step 6: Wire the route**
 
@@ -2755,7 +2841,13 @@ Update the destructuring at the top of the component:
   const { spot, media, profile, supabaseUrl, shootTypeVotes, shootAgain, comments } = loaderData;
 ```
 
-The totals line above (`spot.shootTypeUpvoteCount` upvotes · …) stays: it is the lifetime summary, and the panel is the breakdown.
+The totals line above stays — it is the lifetime summary and the panel is the breakdown — but it moves behind `voteTotalsLine`, exported from `VotePanel.tsx` with its own tests. It was written when every count was necessarily zero, so nothing ever read "1 upvotes" until voting existed; this task is what surfaces it.
+
+- [ ] **Step 6a: Style the two new sections**
+
+The plan originally shipped no CSS, which leaves both components rendering as unstyled text — the buttons lose their chrome entirely against the app's reset. `app/app.css` already establishes the conventions to follow: `.explore__controls button` is a pill whose selected state keys off `aria-pressed` (so the visual state and the accessibility state cannot disagree), `.submit__form button[type="submit"]` is the solid primary, and `[role="alert"]` is `#b42318`. Reuse all three rather than inventing a parallel set, and delete the now-dead `.spot-detail__pending` rule.
+
+Give `.vote-panel__count` `font-variant-numeric: tabular-nums`, so a count going 9 → 10 does not shift the button sideways.
 
 - [ ] **Step 7: Typecheck and run everything**
 

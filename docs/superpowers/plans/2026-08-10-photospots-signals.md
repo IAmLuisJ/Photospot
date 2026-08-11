@@ -1413,46 +1413,40 @@ EOF
 - Create: `supabase/migrations/20260810000010_comment_constraints.sql`
 - Test: `tests/db/comments-data.test.ts`
 
-**Widened scope (recorded during Task 2's review, not yet implemented):** `MAX_COMMENT_LENGTH`
-in `app/domain/comments/comment.ts` is a product limit enforced only in a layer any client can
-skip — `body` is currently unconstrained `text`, so a direct PostgREST insert can store up to 1GB
-in a column every visitor to that spot then downloads. Separately, `comment.ts`'s
-`validateComment` rejects on JS `.trim()`, which strips all Unicode whitespace, while the
-database's `check (length(trim(body)) > 0)` uses Postgres `trim()`, which strips **only spaces**
-(it is `btrim(body, ' ')`). Confirmed against the live local database during Task 2's review:
-`"   "` (spaces only) is rejected with `23514`, but `"\n\t"`, `"   \n\t "`, and `" "` (U+00A0,
-non-breaking space) are all **accepted** — a signed-in user can POST a blank-looking comment
-straight to PostgREST (bypassing
-this domain function entirely) and it will store and count toward `comment_count`, which feeds
-`computeScore`.
+**Widened scope, carried in from Task 2's review.** Two problems with the `comments` table, both
+confirmed against the running database rather than reasoned about:
 
-The repo already resolved the identical question for photo caps: `MAX_PHOTOS_PER_KIND` is
-duplicated into `enforce_photo_cap()` (`20260810000008_contribution.sql:33`) as a trigger below
-the command layer, "so it holds for anything that reaches the table — the API directly, a future
-import script, a careless migration." Apply the same resolution here — two numbers with two
-different jobs, a generous hard ceiling in the schema as an abuse guard plus the tunable product
-limit in TypeScript — rather than trying to make one number do both jobs:
+- **`MAX_COMMENT_LENGTH` was enforced only where a client can skip it.** `body` is unconstrained
+  `text`, so a direct PostgREST insert can store up to 1GB in a column every visitor to that spot
+  then downloads.
+- **The existing `check (length(trim(body)) > 0)` did not mean what it looked like.** Postgres
+  `trim()` is `btrim(x, ' ')` — spaces only. A body of `"\n\t"` passed it, so any signed-in user
+  could POST a newline straight to PostgREST for a blank-looking comment that still rendered, still
+  bumped `comment_count`, and was still worth `weights.comment` in `computeScore`.
 
-- [ ] Replace the `comments_body` check with a whitespace-class test —
-  `check (body ~ '[^[:space:]]')`, "contains at least one non-whitespace character," which is what
-  `.trim().length > 0` actually means. POSIX `[:space:]` covers space, tab, newline, CR, FF, VT but
-  **not** U+00A0, so a residual gap remains after this change too; document that rather than
-  claiming parity with the TypeScript check. Whether a variant (e.g. adding ` ` to the
-  excluded class) closes that residual gap needs to be tested against a running Postgres before
-  it's written down as the answer — don't assume a regex snippet works from reasoning about it;
-  confirm it, then record what was actually confirmed.
-- [ ] Add `check (length(body) <= 10000)` as the abuse ceiling, with a migration comment
-  explaining the two-numbers split, and noting that Postgres `length()` counts code points while
-  JS `.length` counts UTF-16 units — the two limits must never be set equal, since a codepoint
-  above the BMP would make the JS-side count exceed the Postgres-side count for the same string.
-- [ ] Extend `tests/db/comments-data.test.ts`: the existing "refuses an empty body at the
-  database" test should also assert `23514` for `"\n\t"` (not just spaces), and a new test should
-  assert the 10000-codepoint ceiling rejects an over-long body.
-- [ ] Once this migration lands, update the doc comment on `validateComment` in
-  `app/domain/comments/comment.ts` — it currently says (accurately, as of Task 2) that this
-  function is deliberately stricter than the database check and that the gap is tracked here.
-  That wording will be stale once the whitespace-class and ceiling checks land, and needs to be
-  rewritten to describe the new database behavior rather than left describing the old one.
+The repo had already resolved the identical question for photo caps: `MAX_PHOTOS_PER_KIND` is
+duplicated into `enforce_photo_cap()` (`20260810000008_contribution.sql:33`) as a trigger below the
+command layer, "so it holds for anything that reaches the table — the API directly, a future import
+script, a careless migration." Same resolution here: two numbers with two jobs — a generous hard
+ceiling in the schema as an abuse guard, and the tunable product limit staying in TypeScript.
+
+`supabase/migrations/20260810000010_comment_constraints.sql` replaces the blank check with
+`check (body ~ '[^[:space:]]')` and adds `check (length(body) <= 10000)`.
+
+**On the residual whitespace gap — the review's prediction was wrong, and measuring it mattered.**
+The review expected POSIX `[:space:]` to exclude U+00A0, leaving non-breaking space as a hole. On
+this database it does not: a body of only U+00A0 is rejected, matching JS. Compared code point by
+code point, the two definitions agree on space, tab, newline, U+00A0, U+2028, U+2029 and U+3000,
+and disagree on exactly two:
+
+| Code point | JS `.trim()` | Postgres `[:space:]` | Consequence |
+| --- | --- | --- | --- |
+| U+FEFF (BOM) | strips it | keeps it | the database accepts a body of only a BOM |
+| U+0085 (NEL) | keeps it | strips it | the database rejects a body of only U+0085 that validated |
+
+Both are narrow, and the second fails loudly as a `23514` rather than storing anything. Neither is
+worth further complexity, but both are written down — claiming parity without checking is the exact
+mistake this migration exists to correct.
 
 - [ ] **Step 1: Verify the embedded-author shape against the running database**
 
@@ -1464,6 +1458,10 @@ set -a && . ./.env && set +a && curl -s "$SUPABASE_URL/rest/v1/comments?select=i
 
 Expected: `[]` or a row whose `profiles` field is an **object**, not an array. A `PGRST200` "Could not find a relationship" response means the embed name is wrong and the query below must be fixed before continuing.
 
+**Result when this ran:** an object, and `null` for a row whose author is gone —
+`{"id":"…","body":"embed shape probe","profile_id":null,"profiles":null}`. An empty
+`[]` proves nothing about the shape, so insert a probe row rather than accepting it.
+
 - [ ] **Step 2: Write the failing test**
 
 Create `tests/db/comments-data.test.ts`:
@@ -1472,6 +1470,7 @@ Create `tests/db/comments-data.test.ts`:
 import { describe, it, expect, beforeAll, afterAll } from "vitest";
 import { serviceClient, anonClient, createTestUser, deleteTestUser, type TestUser } from "./helpers";
 import { listComments, addComment } from "../../app/data/comments";
+import { MAX_COMMENT_LENGTH } from "../../app/domain/comments/comment";
 
 let author: TestUser;
 let leaver: TestUser;
@@ -1498,7 +1497,10 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await serviceClient().from("spots").delete().eq("id", spotId);
+  // Throws rather than discarding the error: a silent cleanup failure leaves a
+  // published spot on the local map, the same reasoning as deleteTestUser.
+  const { error } = await serviceClient().from("spots").delete().eq("id", spotId);
+  if (error) throw error;
   await deleteTestUser(author.id);
 });
 
@@ -1526,13 +1528,6 @@ describe("addComment / listComments", () => {
     expect(times).toEqual([...times].sort((a, b) => a - b));
   });
 
-  it("refuses an empty body at the database, not just in the form", async () => {
-    const { error } = await author.client
-      .from("comments")
-      .insert({ spot_id: spotId, profile_id: author.id, body: "   " });
-    expect(error?.code).toBe("23514");
-  });
-
   it("refuses a logged-out commenter", async () => {
     await expect(
       addComment(anonClient(), spotId, "Drive-by spam.", author.id),
@@ -1554,9 +1549,66 @@ describe("addComment / listComments", () => {
     expect(comments.map((c) => c.id)).not.toContain(data!.id);
   });
 
+  // The test above passes with or without the query's `status` filter, because
+  // RLS hides the row from anon either way. This is the one that makes the
+  // filter load-bearing: comments_read deliberately lets authors see their own
+  // removed comments, so listing as the author is the only way the filter is
+  // what does the hiding. The page lists with the viewer's own client, so
+  // without it an author would see their removed comment sitting in the thread
+  // and believe it was still public.
+  it("hides a removed comment from its own author too", async () => {
+    const { data } = await serviceClient()
+      .from("comments")
+      .insert({ spot_id: spotId, profile_id: author.id, body: "Removed, seen by its author." })
+      .select("id")
+      .single();
+
+    await serviceClient().from("comments").update({ status: "removed" }).eq("id", data!.id);
+
+    const asAuthor = await listComments(author.client, spotId);
+    expect(asAuthor.map((c) => c.id)).not.toContain(data!.id);
+
+    // Guard against the test passing because RLS hid it from the author: it is
+    // visible to them without the status filter.
+    const { data: unfiltered } = await author.client
+      .from("comments")
+      .select("id")
+      .eq("spot_id", spotId)
+      .eq("id", data!.id);
+    expect(unfiltered).toHaveLength(1);
+  });
+
+  it("returns only the comments on the spot it was asked about", async () => {
+    const admin = serviceClient();
+    const { data: elsewhere, error } = await admin
+      .from("spots")
+      .insert({
+        kind: "outdoor",
+        name: "Some Other Park",
+        slug: `comments-other-${crypto.randomUUID().slice(0, 8)}`,
+        location: "POINT(-85.65 42.92)",
+        created_by: author.id,
+        status: "published",
+      })
+      .select("id")
+      .single();
+    if (error) throw error;
+
+    try {
+      await addComment(author.client, elsewhere.id, "A comment on a different spot.", author.id);
+
+      const here = await listComments(anonClient(), spotId);
+      expect(here.map((c) => c.body)).not.toContain("A comment on a different spot.");
+    } finally {
+      const { error: cleanup } = await admin.from("spots").delete().eq("id", elsewhere.id);
+      if (cleanup) throw cleanup;
+    }
+  });
+
   // Spec §4.6a: deleting an account must not destroy other people's context.
   // comments.profile_id is ON DELETE SET NULL, so the comment survives with no
-  // author — and the mapping has to cope with the embed being null.
+  // author — and the embedded `profiles` resource comes back null, which the
+  // mapping has to cope with.
   it("keeps a comment whose author deleted their account, with no name", async () => {
     await addComment(leaver.client, spotId, "I shot a maternity session here in May.", leaver.id);
     await deleteTestUser(leaver.id);
@@ -1566,6 +1618,54 @@ describe("addComment / listComments", () => {
     expect(orphan).toBeDefined();
     expect(orphan!.authorId).toBeNull();
     expect(orphan!.authorName).toBeNull();
+  });
+
+  // supabase-js returns errors, it does not throw. A mapper that ignores
+  // `error` renders an empty thread for a query that actually failed.
+  it("throws when the query fails rather than returning an empty thread", async () => {
+    await expect(listComments(anonClient(), "not-a-uuid")).rejects.toMatchObject({
+      code: "22P02",
+    });
+  });
+});
+
+// The constraints in migration 10. These are the database's own rules, tested
+// through raw inserts rather than addComment, because the point is what holds
+// for a caller that never goes through the application at all.
+describe("comment constraints", () => {
+  const insertRaw = (body: string) =>
+    serviceClient().from("comments").insert({ spot_id: spotId, profile_id: null, body });
+
+  it("refuses a body of only spaces", async () => {
+    const { error } = await insertRaw("   ");
+    expect(error?.code).toBe("23514");
+  });
+
+  // The original constraint was `length(trim(body)) > 0`, and Postgres trim()
+  // strips spaces only — so this passed, and any signed-in user could POST a
+  // newline straight to PostgREST for a blank comment that still bumped
+  // comment_count and the spot's score.
+  it("refuses a body of only tabs and newlines", async () => {
+    const { error } = await insertRaw("\n\t\n");
+    expect(error?.code).toBe("23514");
+  });
+
+  it("still accepts a body with real text in it, whitespace and all", async () => {
+    const { error } = await insertRaw("  it is fine  ");
+    expect(error).toBeNull();
+  });
+
+  // MAX_COMMENT_LENGTH is the product limit and lives in TypeScript. This is
+  // the abuse ceiling and lives here, because a limit only the app enforces is
+  // not a limit: `body` is unconstrained text and would otherwise take 1GB.
+  it("refuses a body past the abuse ceiling", async () => {
+    const { error } = await insertRaw("x".repeat(10_001));
+    expect(error?.code).toBe("23514");
+  });
+
+  it("leaves comfortable room above the product limit", async () => {
+    const { error } = await insertRaw("x".repeat(MAX_COMMENT_LENGTH + 1));
+    expect(error).toBeNull();
   });
 });
 ```
@@ -1599,11 +1699,16 @@ interface CommentRow {
   body: string;
   created_at: string;
   profile_id: string | null;
+  /**
+   * PostgREST returns a to-one embed as an object, not a single-element array —
+   * verified against the running database, since supabase-js has typed it both
+   * ways across versions. It is null when the author's account is gone.
+   */
   profiles: { display_name: string } | null;
 }
 
 /**
- * `status = 'published'` is written explicitly even though comments_read
+ * `status = 'published'` is written explicitly even though `comments_read`
  * enforces it. The RLS predicate is a disjunction, so it can never match a
  * partial index's predicate and the filter has to be in the query to be usable.
  *
@@ -1638,6 +1743,9 @@ export async function listComments(
  * `profile_id` is supplied by the caller and checked by RLS
  * (`comments_insert with check (profile_id = auth.uid())`), so passing someone
  * else's id fails at the database rather than being trusted here.
+ *
+ * The body is trimmed on the way in, so what the `comments_body_not_blank`
+ * check sees is exactly what `validateComment` measured.
  */
 export async function addComment(
   supabase: SupabaseClient,
@@ -1661,13 +1769,25 @@ export async function addComment(
 npm run test:db -- comments-data
 ```
 
-Expected: 7 passing. If the author name comes back `null` on the first test, the embed is an array in this version of supabase-js — change `row.profiles?.display_name` to read the first element and update `CommentRow` to match what step 1 actually showed.
+Expected: 14 passing. If the author name comes back `null` on the first test, the embed is an array in this version of supabase-js — change `row.profiles?.display_name` to read the first element and update `CommentRow` to match what step 1 actually showed.
 
-- [ ] **Step 6: Mutation-test the moderation filter**
+- [ ] **Step 6: Mutation-test the query filters and both constraints**
 
-Remove `.eq("status", "published")` and re-run.
+| Mutation | Test that must go red |
+| --- | --- |
+| Remove `.eq("status", "published")` | "hides a removed comment from **its own author too**" |
+| Remove `.eq("spot_id", spotId)` | "returns only the comments on the spot it was asked about" |
+| `if (error) throw error` → `if (false) …` in `listComments` | "throws when the query fails rather than returning an empty thread" |
+| Read the embed as an array (`row.profiles[0]`) | "stores a comment and lists it with its author" |
+| `body: body.trim()` → `body` in `addComment` | "trims the body it stores" |
+| `if (error) throw error` → `if (false) …` in `addComment` | "refuses a logged-out commenter" |
+| `ascending: true` → `false` | "orders oldest first" |
+| Revert `comments_body_not_blank` to `length(trim(body)) > 0` | "refuses a body of only tabs and newlines" |
+| Drop `comments_body_length` | "refuses a body past the abuse ceiling" |
 
-Expected: **"hides a removed comment from other visitors" fails.** If it passes, the test is leaning on RLS rather than on the query, and the explicit-filter rule is untested. Restore the filter.
+**The status filter is the subtle one.** "hides a removed comment from other visitors" passes with or without it, because RLS hides the row from `anon` either way — the mutation survives, and the explicit-filter rule goes untested. Only listing **as the author** makes the filter load-bearing, because `comments_read` deliberately lets authors see their own removed comments. That matters beyond the test: the detail page lists with the viewer's own client, so without the filter an author would see their removed comment sitting in the thread and believe it was still public.
+
+The SQL mutations can be applied directly to the live constraint with `alter table … drop constraint … / add constraint …` rather than a full `supabase db reset` per mutation, then restored from the migration. Verify the restored definitions with `pg_get_constraintdef` afterwards rather than assuming.
 
 - [ ] **Step 7: Commit**
 

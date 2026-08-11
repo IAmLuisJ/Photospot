@@ -1268,11 +1268,7 @@ The pure helpers first, since the action is a public endpoint and both the targe
 
 ```tsx
 import { useFetcher } from "react-router";
-import {
-  REPORT_REASONS,
-  isReportReason,
-  type ReportTarget,
-} from "~/domain/reports/reasons";
+import { REPORT_REASONS, isReportReason, type ReportTarget } from "~/domain/reports/reasons";
 
 const TARGETS: readonly string[] = ["spot", "photo", "comment"];
 
@@ -1289,6 +1285,7 @@ export interface ReportIntent {
  * Validates the target type as well as the reason: `target_type` is a Postgres
  * enum, so a bad value is a 22P02 the user cannot act on, and `reason` is free
  * text, so a bad value is stored forever and renders as itself in the queue.
+ * The action is a public endpoint, so neither can be taken on trust.
  */
 export function reportIntentFrom(formData: FormData | undefined): ReportIntent | null {
   if (formData?.get("intent") !== "report") return null;
@@ -1331,7 +1328,7 @@ export function ReportButton({
   return (
     <details className="report">
       <summary>Report</summary>
-      <fetcher.Form method="post">
+      <fetcher.Form method="post" className="report__form">
         <input type="hidden" name="intent" value="report" />
         <input type="hidden" name="targetType" value={targetType} />
         <input type="hidden" name="targetId" value={targetId} />
@@ -1359,8 +1356,6 @@ export function ReportButton({
   );
 }
 ```
-
-Note the object literal in `reportIntentFrom` is written out rather than shorthand — `note === "" ? null : note` needs a key. Write it as `note: note === "" ? null : note`.
 
 Render one on the spot itself, one per comment, and one per photo — spec §4.3 makes the photo takedown path non-negotiable, and it is the same component with a different `targetType`.
 

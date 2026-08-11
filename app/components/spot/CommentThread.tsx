@@ -1,5 +1,6 @@
 import { useFetcher } from "react-router";
 import type { SpotComment } from "~/data/comments";
+import { ReportButton } from "./ReportButton";
 import { MAX_COMMENT_LENGTH } from "~/domain/comments/comment";
 
 /**
@@ -36,6 +37,7 @@ export function CommentThread({
             <li key={c.id}>
               <p className="comments__byline">{commentByline(c)}</p>
               <p className="comments__body">{c.body}</p>
+              <ReportButton targetType="comment" targetId={c.id} signedIn={signedIn} />
             </li>
           ))}
         </ul>

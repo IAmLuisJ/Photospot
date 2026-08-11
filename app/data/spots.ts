@@ -24,6 +24,9 @@ export interface SpotSummary {
 /** Everything the detail page shows. */
 export interface SpotDetail extends SpotSummary {
   description: string | null;
+  /** Both null once the account is deleted (spec §4.6a). */
+  createdBy: string | null;
+  ownerProfileId: string | null;
   shootTypeUpvoteCount: number;
   shootAgainYesCount: number;
   shootAgainNoCount: number;
@@ -109,6 +112,8 @@ export async function listSpotsInViewport(
 
 interface DetailRow extends ViewportRow {
   description: string | null;
+  created_by: string | null;
+  owner_profile_id: string | null;
   shoot_type_upvote_count: number;
   shoot_again_yes_count: number;
   shoot_again_no_count: number;
@@ -142,6 +147,8 @@ export async function getSpotBySlug(
     // full photo set separately in plan 3.
     ...toSummary({ ...row, cover_photo_path: null, cover_credit_name: null }),
     description: row.description,
+    createdBy: row.created_by,
+    ownerProfileId: row.owner_profile_id,
     shootTypeUpvoteCount: row.shoot_type_upvote_count,
     shootAgainYesCount: row.shoot_again_yes_count,
     shootAgainNoCount: row.shoot_again_no_count,

@@ -16,6 +16,8 @@ import { listComments, addComment } from "~/data/comments";
 import { validateComment } from "~/domain/comments/comment";
 import { refreshSpotScore } from "~/data/scores";
 import { VotePanel, voteTotalsLine } from "~/components/spot/VotePanel";
+import { ReportButton, reportIntentFrom } from "~/components/spot/ReportButton";
+import { fileReport } from "~/data/reports";
 import { CommentThread } from "~/components/spot/CommentThread";
 import type { Route } from "./+types/spots.$slug";
 
@@ -112,6 +114,16 @@ export async function action({ request, params }: Route.ActionArgs) {
         await addComment(supabase, spot.id, body, profile.id);
         break;
       }
+      case "report": {
+        const report = reportIntentFrom(form);
+        if (!report) {
+          return routeData({ error: "That report was not understood." }, { headers, status: 400 });
+        }
+        await fileReport(supabase, { ...report, profileId: profile.id });
+        // Returned early: a report changes no counter, so there is no derived
+        // score to refresh below.
+        return routeData({ ok: true, reported: true }, { headers });
+      }
       default:
         return routeData({ error: "Unknown action." }, { headers, status: 400 });
     }
@@ -159,6 +171,15 @@ const list = (values: string[] | null) =>
 export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
   const { spot, media, profile, supabaseUrl, shootTypeVotes, shootAgain, comments } = loaderData;
   const place = [spot.locality, spot.region].filter(Boolean).join(", ");
+
+  // Matches spots_update: the submitter, the listing owner, or an admin. The
+  // action refuses anyone else politely, but the link should not be there at
+  // all — plan 5 found it offered to every signed-in user on every spot.
+  const canEdit =
+    profile !== null &&
+    (profile.id === spot.createdBy ||
+      profile.id === spot.ownerProfileId ||
+      profile.role === "admin");
 
   return (
     <main className="spot-detail">
@@ -218,6 +239,9 @@ export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
                   {p.kind === "session" ? "Session" : "Scouting"}
                   {p.creditName && <> · {p.creditName}</>}
                 </p>
+                {/* Spec §4.3: session photos show real families, so the
+                    takedown path has to reach individual photos. */}
+                <ReportButton targetType="photo" targetId={p.id} signedIn={profile !== null} />
               </li>
             ))}
           </ul>
@@ -239,11 +263,13 @@ export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
         </section>
       )}
 
-      {profile && (
+      {canEdit && (
         <p>
           <Link to={`/spots/${spot.slug}/edit`}>Edit this spot</Link>
         </p>
       )}
+
+      <ReportButton targetType="spot" targetId={spot.id} signedIn={profile !== null} />
 
       <VotePanel rows={shootTypeVotes} shootAgain={shootAgain} signedIn={profile !== null} />
 

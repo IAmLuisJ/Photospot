@@ -1463,7 +1463,7 @@ Note the last case: a report whose target is deleted cannot be hidden or removed
 
 - [ ] **Step 2: Implement the row and the route**
 
-`ReportRow` renders the summary, the note if there is one, and one `fetcher.Form` button per entry in `actionsFor(report.targetType)` — filtered to `dismiss` when the target is gone:
+`ReportRow` renders the summary, the note if there is one, and one `fetcher.Form` button per entry in `availableActions(report)` — which wraps `actionsFor` with the two cases that gate it: a closed report gets none, and a report whose target has been deleted gets only `dismiss`.
 
 ```tsx
 export function queueSummary(report: QueuedReport): string {

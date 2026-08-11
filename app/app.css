@@ -370,3 +370,25 @@ body {
 }
 .report__form [role="alert"] { color: #b42318; margin: 0; }
 .report__done { font-size: 0.85rem; opacity: 0.8; margin-top: 0.4rem; }
+
+/* ---- Admin queue ---- */
+
+.admin { max-width: 46rem; margin: 0 auto; padding: 1.5rem 1rem 4rem; }
+.admin__count { opacity: 0.75; font-size: 0.9rem; }
+.admin__list { list-style: none; padding: 0; margin: 1rem 0 0; display: grid; gap: 0.75rem; }
+.report-row {
+  border: 1px solid rgb(0 0 0 / 0.15); border-radius: 8px; padding: 0.7rem 0.85rem;
+}
+/* A closed report stays visible as history, but recedes. */
+.report-row[data-status="resolved"],
+.report-row[data-status="dismissed"] { opacity: 0.55; }
+.report-row__summary { margin: 0; font-weight: 600; font-size: 0.95rem; }
+.report-row__note { margin: 0.35rem 0 0; font-style: italic; opacity: 0.85; }
+.report-row__meta { margin: 0.35rem 0 0; font-size: 0.8rem; opacity: 0.65; }
+.report-row__actions { display: flex; gap: 0.4rem; margin-top: 0.6rem; }
+.report-row__actions button {
+  padding: 0.25rem 0.7rem; border-radius: 999px; font: inherit; cursor: pointer;
+  border: 1px solid rgb(0 0 0 / 0.25); background: transparent;
+}
+.report-row__actions button:disabled { opacity: 0.5; cursor: default; }
+.report-row [role="alert"] { color: #b42318; font-size: 0.85rem; margin: 0.4rem 0 0; }

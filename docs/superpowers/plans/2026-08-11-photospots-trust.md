@@ -878,6 +878,53 @@ EOF
 Create `tests/db/reports-data.test.ts`. Build the same shape of fixture as task 2 — promote an admin via `serviceClient`, insert a spot owned by the author — but **name the spot `Report Target`**, which is what the assertions below expect. Then:
 
 ```ts
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import { serviceClient, anonClient, createTestUser, deleteTestUser, type TestUser } from "./helpers";
+import { fileReport, listReportQueue, resolveReport } from "../../app/data/reports";
+
+let boss: TestUser;
+let author: TestUser;
+let spotId: string;
+
+const admin = () => serviceClient();
+
+beforeAll(async () => {
+  boss = await createTestUser("Queue Admin");
+  author = await createTestUser("Queue Author");
+  const { error: promote } = await admin()
+    .from("profiles")
+    .update({ role: "admin" })
+    .eq("id", boss.id);
+  if (promote) throw promote;
+
+  const { data, error } = await admin()
+    .from("spots")
+    .insert({
+      kind: "outdoor",
+      name: "Report Target",
+      slug: `report-target-${crypto.randomUUID().slice(0, 8)}`,
+      location: "POINT(-85.67 42.94)",
+      created_by: author.id,
+      status: "published",
+    })
+    .select("id")
+    .single();
+  if (error) throw error;
+  spotId = data.id;
+});
+
+afterAll(async () => {
+  // Reports have no cascade from spots — target_id is polymorphic with no
+  // foreign key — so they have to be deleted explicitly or they outlive the
+  // fixture and pollute every later run of the queue tests.
+  const { error: reportError } = await admin().from("reports").delete().eq("target_id", spotId);
+  if (reportError) throw reportError;
+  const { error } = await admin().from("spots").delete().eq("id", spotId);
+  if (error) throw error;
+  await deleteTestUser(boss.id);
+  await deleteTestUser(author.id);
+});
+
 describe("fileReport", () => {
   it("stores a report attributed to the caller", async () => {
     await fileReport(author.client, {
@@ -888,7 +935,7 @@ describe("fileReport", () => {
       profileId: author.id,
     });
 
-    const { data } = await serviceClient()
+    const { data } = await admin()
       .from("reports")
       .select("target_type, reason, note, status, profile_id")
       .eq("target_id", spotId)
@@ -928,6 +975,8 @@ describe("fileReport", () => {
     ).rejects.toMatchObject({ code: "42501" });
   });
 
+  // reports.reason is free text, so the database will store anything and an
+  // unrecognised value renders as itself in the queue forever.
   it("rejects a reason outside the vocabulary before it reaches the database", async () => {
     await expect(
       fileReport(author.client, {
@@ -939,6 +988,24 @@ describe("fileReport", () => {
       }),
     ).rejects.toThrow(/reason/i);
   });
+
+  it("stores a whitespace-only note as no note", async () => {
+    await fileReport(author.client, {
+      targetType: "spot",
+      targetId: spotId,
+      reason: "wrong_place",
+      note: "   \n ",
+      profileId: author.id,
+    });
+
+    const { data } = await admin()
+      .from("reports")
+      .select("note")
+      .eq("target_id", spotId)
+      .eq("reason", "wrong_place")
+      .single();
+    expect(data!.note).toBeNull();
+  });
 });
 
 describe("listReportQueue", () => {
@@ -947,26 +1014,44 @@ describe("listReportQueue", () => {
     const row = rows.find((r) => r.targetId === spotId)!;
     expect(row.targetType).toBe("spot");
     expect(row.targetTitle).toBe("Report Target");
+    expect(row.targetStatus).toBe("published");
     expect(row.status).toBe("open");
   });
 
+  // An empty queue and a forbidden one look identical to a caller, and the
+  // difference is what decides whether to show an admin surface at all.
   it("throws for a non-admin rather than returning an empty queue", async () => {
     await expect(listReportQueue(author.client)).rejects.toBeTruthy();
+  });
+
+  it("throws for a logged-out visitor", async () => {
+    await expect(listReportQueue(anonClient())).rejects.toMatchObject({ code: "42501" });
   });
 });
 
 describe("resolveReport", () => {
-  it("hides a spot and closes its report", async () => {
-    const [report] = await listReportQueue(boss.client);
-    await resolveReport(boss.client, report.id, "hide");
+  it("hides a spot and closes its report in one call", async () => {
+    const open = (await listReportQueue(boss.client)).find(
+      (r) => r.targetId === spotId && r.status === "open",
+    )!;
+    await resolveReport(boss.client, open.id, "hide");
 
-    const { data } = await serviceClient().from("spots").select("status").eq("id", spotId).single();
+    const { data } = await admin().from("spots").select("status").eq("id", spotId).single();
     expect(data!.status).toBe("hidden");
+
+    const { data: report } = await admin()
+      .from("reports")
+      .select("status")
+      .eq("id", open.id)
+      .single();
+    expect(report!.status).toBe("resolved");
   });
 
   it("refuses a non-admin", async () => {
-    const [report] = await listReportQueue(boss.client);
-    await expect(resolveReport(author.client, report.id, "remove")).rejects.toBeTruthy();
+    const open = (await listReportQueue(boss.client)).find(
+      (r) => r.targetId === spotId && r.status === "open",
+    )!;
+    await expect(resolveReport(author.client, open.id, "remove")).rejects.toBeTruthy();
   });
 });
 ```
@@ -1017,6 +1102,7 @@ export async function fileReport(supabase: SupabaseClient, report: NewReport): P
     target_id: report.targetId,
     profile_id: report.profileId,
     reason: report.reason,
+    // A whitespace-only note is no note, not an empty string to store.
     note: report.note?.trim() || null,
   });
 
@@ -1035,6 +1121,11 @@ interface QueueRow {
   created_at: string;
 }
 
+/**
+ * Throws for a non-admin rather than returning an empty list: an empty queue
+ * and a forbidden one look identical to a caller, and the difference is what
+ * decides whether to render an admin surface at all.
+ */
 export async function listReportQueue(supabase: SupabaseClient): Promise<QueuedReport[]> {
   const { data, error } = await supabase.rpc("admin_report_queue");
   if (error) throw error;
@@ -1052,7 +1143,7 @@ export async function listReportQueue(supabase: SupabaseClient): Promise<QueuedR
   }));
 }
 
-/** Target status and report closure move together — see the migration. */
+/** Target status and report closure move together — see migration 14. */
 export async function resolveReport(
   supabase: SupabaseClient,
   reportId: string,
@@ -1082,7 +1173,9 @@ The database currently holds 10 reports left by the existing suite. Delete the o
 docker exec supabase_db_photospots psql -U postgres -d postgres -tAc "select count(*) from public.reports;"
 ```
 
-Run it before and after `npm run test:db`. The two numbers must match. If they do not, find the file that leaks and give it an `afterAll` — `tests/db/rls.test.ts` is the likely one.
+Run it before and after `npm run test:db`. The two numbers must match.
+
+**They did not: three reports leaked**, from `rls.test.ts` and `schema-signals.test.ts`. The cause is worth knowing, because it is not the obvious one — `reports.target_id` is polymorphic with no foreign key, so deleting the spot does not cascade, *and* `reports.profile_id` is `ON DELETE SET NULL`, so deleting the reporter orphans the row rather than removing it. A fixture that cleans up its spot and its users still leaves its reports behind. Note also that `schema-signals.test.ts` reports against a second spot it cleans up inline, not the one its `afterAll` deletes.
 
 - [ ] **Step 5: Commit**
 

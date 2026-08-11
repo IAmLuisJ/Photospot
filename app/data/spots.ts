@@ -86,7 +86,7 @@ export async function listSpotsInViewport(
   filters: ExploreFilters,
   limit = 200,
 ): Promise<SpotSummary[]> {
-  const { viewport, shootTypeId, sort } = filters;
+  const { viewport, shootTypeId, sort, attributes } = filters;
   const { data, error } = await supabase.rpc("spots_in_viewport", {
     p_west: viewport.west,
     p_south: viewport.south,
@@ -95,6 +95,12 @@ export async function listSpotsInViewport(
     p_shoot_type_id: shootTypeId,
     p_sort: sort,
     p_limit: limit,
+    p_cost_types: attributes.costTypes,
+    p_max_walk_minutes: attributes.maxWalkMinutes,
+    p_accessibility: attributes.accessibility,
+    // `? true : null`, not the boolean itself: false would read as "show me
+    // spots that ban dogs", which nobody asked for and the UI cannot express.
+    p_dog_friendly: attributes.dogFriendlyOnly ? true : null,
   });
 
   if (error) throw error;

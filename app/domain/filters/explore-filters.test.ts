@@ -74,15 +74,46 @@ describe("filtersToSearchParams", () => {
       shootTypeId: 3,
       sort: "hot",
       view: "gallery",
+      attributes: {
+        costTypes: ["free"],
+        maxWalkMinutes: 10,
+        accessibility: ["stroller"],
+        dogFriendlyOnly: true,
+      },
     };
     expect(parseExploreFilters(filtersToSearchParams(filters))).toEqual(filters);
   });
 
   // Otherwise every pan writes a URL full of defaults and the share link is
   // unreadable.
-  it("omits values that match the default", () => {
+  //
+  // `view` is the deliberate exception and is always written. Without it,
+  // clicking "split" while a cookie remembers "gallery" produces a URL with no
+  // view, the loader falls back to the cookie, and the click does nothing.
+  it("omits values that match the default, except the view", () => {
     const qs = filtersToSearchParams(DEFAULT_FILTERS).toString();
-    expect(qs).toBe("");
+    expect(qs).toBe("view=split");
+  });
+
+  it("writes the view even when it is the default one", () => {
+    expect(filtersToSearchParams({ ...DEFAULT_FILTERS, view: "split" }).get("view")).toBe("split");
+    expect(filtersToSearchParams({ ...DEFAULT_FILTERS, view: "map" }).get("view")).toBe("map");
+  });
+
+  it("carries the attribute filters", () => {
+    const qs = filtersToSearchParams({
+      ...DEFAULT_FILTERS,
+      attributes: {
+        costTypes: ["free", "park_pass"],
+        maxWalkMinutes: 5,
+        accessibility: ["shade"],
+        dogFriendlyOnly: true,
+      },
+    }).toString();
+    expect(qs).toContain("cost=free%2Cpark_pass");
+    expect(qs).toContain("walk=5");
+    expect(qs).toContain("access=shade");
+    expect(qs).toContain("dogs=1");
   });
 
   it("keeps the viewport when it differs from the default", () => {

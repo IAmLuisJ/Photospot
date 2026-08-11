@@ -1,4 +1,10 @@
 import type { Bounds } from "../geo/bounds";
+import {
+  parseAttributeFilters,
+  attributeFiltersToParams,
+  NO_ATTRIBUTE_FILTERS,
+  type AttributeFilters,
+} from "./attribute-filters";
 
 export type ExploreView = "split" | "map" | "gallery";
 export type ExploreSort = "score" | "hot";
@@ -9,6 +15,7 @@ export interface ExploreFilters {
   shootTypeId: number | null;
   sort: ExploreSort;
   view: ExploreView;
+  attributes: AttributeFilters;
 }
 
 /**
@@ -31,6 +38,7 @@ export const DEFAULT_FILTERS: ExploreFilters = Object.freeze({
   shootTypeId: null,
   sort: "score",
   view: "split",
+  attributes: NO_ATTRIBUTE_FILTERS,
 });
 
 const VIEWS: readonly string[] = ["split", "map", "gallery"];
@@ -79,6 +87,7 @@ export function parseExploreFilters(params: URLSearchParams): ExploreFilters {
     shootTypeId: typeRaw !== null && Number.isInteger(typeRaw) ? typeRaw : null,
     sort: sort !== null && SORTS.includes(sort) ? (sort as ExploreSort) : "score",
     view: view !== null && VIEWS.includes(view) ? (view as ExploreView) : "split",
+    attributes: parseAttributeFilters(params),
   };
 }
 
@@ -101,7 +110,17 @@ export function filtersToSearchParams(filters: ExploreFilters): URLSearchParams 
   if (filters.zoom !== DEFAULT_FILTERS.zoom) params.set("z", String(filters.zoom));
   if (filters.shootTypeId !== null) params.set("type", String(filters.shootTypeId));
   if (filters.sort !== DEFAULT_FILTERS.sort) params.set("sort", filters.sort);
-  if (filters.view !== DEFAULT_FILTERS.view) params.set("view", filters.view);
+
+  // `view` is written unconditionally, unlike everything else here. Once a
+  // cookie remembers the view, omitting `view=split` means clicking "split"
+  // produces a URL with no view at all, the loader falls back to the
+  // remembered gallery, and the click silently does nothing. One extra query
+  // parameter removes the whole class of bug.
+  params.set("view", filters.view);
+
+  for (const [key, value] of attributeFiltersToParams(filters.attributes)) {
+    params.set(key, value);
+  }
 
   return params;
 }

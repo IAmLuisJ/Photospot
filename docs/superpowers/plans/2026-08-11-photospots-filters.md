@@ -1442,8 +1442,8 @@ import { serviceClient, anonClient, createTestUser, deleteTestUser, type TestUse
 let author: TestUser;
 const ids: Record<string, string> = {};
 
-// A box around the fixtures, well away from the seeded Grand Rapids spots so
-// this file's assertions cannot be perturbed by the seed.
+// A box well away from the seeded Grand Rapids spots, so this file's assertions
+// cannot be perturbed by the seed or by another test file's fixtures.
 const BOX = { west: -95.05, south: 40.0, east: -94.95, north: 40.1 };
 
 const makeSpot = async (name: string, fields: Record<string, unknown>) => {
@@ -1482,10 +1482,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  const { error } = await serviceClient()
-    .from("spots")
-    .delete()
-    .in("id", Object.values(ids));
+  const { error } = await serviceClient().from("spots").delete().in("id", Object.values(ids));
   if (error) throw error;
   await deleteTestUser(author.id);
 });
@@ -1514,6 +1511,7 @@ describe("spots_in_viewport attribute filters", () => {
 
   it("filters by an upper bound on the walk", async () => {
     expect(await query({ p_max_walk_minutes: 5 })).toEqual(["Free"]);
+    // Inclusive: 20 must include the 20-minute spot.
     expect(await query({ p_max_walk_minutes: 20 })).toEqual(["Free", "Permit"]);
   });
 
@@ -1529,7 +1527,7 @@ describe("spots_in_viewport attribute filters", () => {
   });
 
   // The whole point of the null semantics. A filter promising a short walk
-  // must not return a spot whose walk nobody recorded.
+  // must not return a spot whose walk time nobody recorded.
   it("excludes spots where the attribute is unknown", async () => {
     expect(await query({ p_max_walk_minutes: 60 })).not.toContain("Unknown");
     expect(await query({ p_cost_types: ["free"] })).not.toContain("Unknown");
@@ -1547,6 +1545,23 @@ describe("spots_in_viewport attribute filters", () => {
   it("treats an empty filter array as no filter", async () => {
     expect(await query({ p_cost_types: [] })).toEqual(["Free", "Permit", "Unknown"]);
     expect(await query({ p_accessibility: [] })).toEqual(["Free", "Permit", "Unknown"]);
+  });
+
+  // dog_friendly = false must behave as "no filter", not as "show me spots
+  // that ban dogs" — nobody asked for that, and the UI has no way to send it.
+  it("treats a false dogs flag as no filter", async () => {
+    expect(await query({ p_dog_friendly: false })).toEqual(["Free", "Permit", "Unknown"]);
+  });
+
+  it("still respects the shoot-type filter alongside the new ones", async () => {
+    // None of these fixtures is tagged with a shoot type, so any shoot-type
+    // filter must empty the result regardless of the attribute filters.
+    const { data: types } = await serviceClient()
+      .from("shoot_types")
+      .select("id")
+      .eq("slug", "family")
+      .single();
+    expect(await query({ p_shoot_type_id: types!.id, p_cost_types: ["free"] })).toEqual([]);
   });
 
   it("is still callable by a logged-out visitor", async () => {
@@ -1703,21 +1718,24 @@ Expected: exactly one row, with eleven parameters. Two rows means the `drop` sig
 npm run test:db -- attribute-filtering
 ```
 
-Expected: 9 passing.
+Expected: 11 passing.
 
 - [ ] **Step 5: Decide about indexes by measuring, not by assuming**
 
 Spec §4.7 says these columns are indexable "which is the entire purpose of these fields". That is an argument for the column shape, not proof that an index earns its keep today: the query is already gated by a highly selective GIST viewport intersection, and at six seeded rows Postgres will sequentially scan whatever you build.
 
-Measure at a realistic size instead of guessing. Insert ~5000 synthetic spots spread across the Grand Rapids box with randomised attributes, then:
+Measure at a realistic size. Insert ~5000 synthetic spots across the Grand Rapids box with randomised attributes, `analyze`, then `EXPLAIN (ANALYZE, BUFFERS)` — **against the query body, not the function call**, since explaining `select * from spots_in_viewport(...)` shows only a Function Scan node and tells you nothing about which indexes the body uses.
 
-```sql
-explain (analyze, buffers)
-select * from public.spots_in_viewport(-85.75, 42.91, -85.59, 43.03, null, 'score', 200,
-  array['free']::text[], 10, array['stroller']::text[], null);
-```
+**Result when this ran**, and the reason no index was added:
 
-Record the plan. **Add an index only if the planner actually uses it**, and write down what you measured either way — including "the viewport GIST index does all the work and the attribute predicates are cheap filters on an already-small row set", if that is what you find. An unused index is not free: it slows every write to `spots`, which now happens on every vote through the score refresh.
+| | plan | time |
+| --- | --- | --- |
+| no attribute index | Bitmap Index Scan on `spots_location_idx`, 4914 rows removed by filter | 5.4 ms |
+| + `GIN(accessibility)` | index **is** used (`Recheck Cond` on `@>`), 1163 rows removed by filter | 4.8 ms |
+
+The GIST viewport index does the work; a GIN index buys ~11% at a scale an order of magnitude past the launch market, against a write cost on every `UPDATE` to `spots` — which now happens on every vote through the score refresh. So: no index, and the numbers recorded in the migration so the next person does not have to re-derive them.
+
+Note also that the filtered query is *faster* than the unfiltered one (5.4 ms against 9.8 ms), because the filter shrinks the sort. Filtering does not need defending on performance grounds.
 
 Delete the synthetic rows afterwards and confirm the count is back where it started.
 
@@ -1783,9 +1801,9 @@ npm test && npm run typecheck
 | Mutation | Test that must go red |
 | --- | --- |
 | `s.accessibility @> p_accessibility` → `s.accessibility && p_accessibility` | "requires every accessibility value, not just one of them" |
-| Drop `s.walk_minutes is not null and` | "excludes spots where the attribute is unknown" |
+| Drop `s.walk_minutes is not null and` | **nothing — survives.** `null <= 20` is null, which a WHERE already excludes, so the clause is documentation. The same three-valued logic is what excludes unknowns from the cost and accessibility predicates, none of which has an explicit null check. |
 | `cardinality(p_cost_types) = 0` → remove that clause | "treats an empty filter array as no filter" |
-| `not coalesce(p_dog_friendly, false) or s.dog_friendly is true` → `s.dog_friendly is not false` | "excludes spots where the attribute is unknown" |
+| `not coalesce(p_dog_friendly, false) or s.dog_friendly is true` → `s.dog_friendly is not false` | "filters to dog-friendly spots" **and** "excludes spots where the attribute is unknown" — the one null check that is genuinely load-bearing |
 | `p_max_walk_minutes` comparison `<=` → `<` | "filters by an upper bound on the walk" |
 
 - [ ] **Step 9: Commit**

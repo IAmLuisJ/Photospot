@@ -35,6 +35,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  // reports.target_id is polymorphic with no foreign key, so deleting the spot
+  // does not cascade to its reports, and reports.profile_id is ON DELETE SET
+  // NULL — so deleting the reporter orphans the row rather than removing it.
+  // Without this the reports outlive every fixture in the file.
+  await serviceClient().from("reports").delete().eq("target_id", spotId);
   await serviceClient().from("spots").delete().eq("id", spotId);
   for (const u of [author, stranger, admin]) await deleteTestUser(u.id);
 });

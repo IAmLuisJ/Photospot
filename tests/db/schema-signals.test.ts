@@ -234,6 +234,11 @@ describe("account deletion", () => {
       .from("signals").select("id").eq("spot_id", deletionSpotId);
     expect(signalsAfter).toEqual([]);
 
+    // reports.target_id is polymorphic with no foreign key, so deleting the
+    // spot does not cascade to its reports — and reports.profile_id is ON
+    // DELETE SET NULL, so deleting the reporter orphans the row rather than
+    // removing it. Both reports above would otherwise outlive this file.
+    await db.from("reports").delete().eq("target_id", deletionSpotId);
     await db.from("spots").delete().eq("id", deletionSpotId);
   });
 });

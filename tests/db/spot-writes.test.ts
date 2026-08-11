@@ -4,6 +4,7 @@ import {
   resolveSlug,
   createSpot,
   addGalleryLink,
+  updateSpot,
 } from "../../app/data/spot-writes";
 import { serviceClient, createTestUser, deleteTestUser, type TestUser } from "./helpers";
 
@@ -156,5 +157,104 @@ describe("addGalleryLink", () => {
       .eq("spot_id", id);
     expect(data).toHaveLength(1);
     expect(data![0].url).toBe("https://example.com/gallery");
+  });
+});
+
+describe("updateSpot attributes", () => {
+  let spotId: string;
+
+  beforeAll(async () => {
+    spotId = await createSpot(author.client, submission("Attribute Target"), "attribute-target");
+    created.push(spotId);
+  });
+
+  it("writes every attribute column", async () => {
+    await updateSpot(author.client, spotId, {
+      costType: "permit_required",
+      walkMinutes: 8,
+      accessibility: ["wheelchair", "restrooms"],
+      terrain: ["paved", "grass"],
+      dogFriendly: true,
+    });
+
+    const { data, error } = await serviceClient()
+      .from("spots")
+      .select("cost_type, walk_minutes, accessibility, terrain, dog_friendly")
+      .eq("id", spotId)
+      .single();
+    expect(error).toBeNull();
+    expect(data).toEqual({
+      cost_type: "permit_required",
+      walk_minutes: 8,
+      accessibility: ["wheelchair", "restrooms"],
+      terrain: ["paved", "grass"],
+      dog_friendly: true,
+    });
+  });
+
+  // Clearing has to be possible, or an attribute set by mistake is permanent.
+  it("clears an attribute back to null", async () => {
+    await updateSpot(author.client, spotId, {
+      costType: null,
+      accessibility: [],
+      dogFriendly: null,
+    });
+
+    const { data } = await serviceClient()
+      .from("spots")
+      .select("cost_type, accessibility, dog_friendly")
+      .eq("id", spotId)
+      .single();
+    expect(data).toEqual({ cost_type: null, accessibility: [], dog_friendly: null });
+  });
+
+  // An omitted field is "not on this form", which must leave the stored value
+  // alone — the distinction the `!== undefined` guard exists for.
+  it("leaves an omitted field untouched", async () => {
+    await updateSpot(author.client, spotId, { walkMinutes: 3 });
+    await updateSpot(author.client, spotId, { costType: "free" });
+
+    const { data } = await serviceClient()
+      .from("spots")
+      .select("walk_minutes, cost_type")
+      .eq("id", spotId)
+      .single();
+    expect(data).toEqual({ walk_minutes: 3, cost_type: "free" });
+  });
+
+  it("refuses a value outside the vocabulary, so the constraint is not bypassed", async () => {
+    await expect(
+      updateSpot(author.client, spotId, { accessibility: ["teleporter"] }),
+    ).rejects.toMatchObject({ code: "23514" });
+  });
+
+  // The column grants in migration 5 are what allow this at all; score, status
+  // and the counters are deliberately absent from them.
+  it("cannot be used to reach a column that is not granted", async () => {
+    const { error } = await author.client.from("spots").update({ score: 99 }).eq("id", spotId);
+    expect(error?.code).toBe("42501");
+  });
+
+  it("reports that it saved when the caller owns the spot", async () => {
+    expect(await updateSpot(author.client, spotId, { costType: "free" })).toBe(true);
+  });
+
+  // The silent failure this return value exists for. RLS matches zero rows for
+  // a stranger and PostgREST reports no error, so without this the edit form
+  // redirects as though it saved and discards everything typed.
+  it("reports that it saved nothing when the caller does not own the spot", async () => {
+    const stranger = await createTestUser("Passing Stranger");
+    try {
+      expect(await updateSpot(stranger.client, spotId, { costType: "negotiated" })).toBe(false);
+
+      const { data } = await serviceClient()
+        .from("spots")
+        .select("cost_type")
+        .eq("id", spotId)
+        .single();
+      expect(data!.cost_type).toBe("free");
+    } finally {
+      await deleteTestUser(stranger.id);
+    }
   });
 });

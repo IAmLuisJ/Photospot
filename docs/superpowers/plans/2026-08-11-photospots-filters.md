@@ -457,7 +457,7 @@ Create `app/components/spot/AttributeFields.test.tsx`:
 
 ```ts
 import { describe, it, expect } from "vitest";
-import { checkedValuesFrom, parseOptionalInt } from "./AttributeFields";
+import { checkedValuesFrom, parseOptionalInt, parseOptionalBool } from "./AttributeFields";
 
 const form = (entries: [string, string][]): FormData => {
   const data = new FormData();
@@ -489,6 +489,14 @@ describe("checkedValuesFrom", () => {
     ]);
     expect(checkedValuesFrom(data, "accessibility")).toEqual(["wheelchair"]);
   });
+
+  it("validates terrain against its own vocabulary, not accessibility's", () => {
+    const data = form([
+      ["terrain", "grass"],
+      ["terrain", "wheelchair"],
+    ]);
+    expect(checkedValuesFrom(data, "terrain")).toEqual(["grass"]);
+  });
 });
 
 describe("parseOptionalInt", () => {
@@ -511,6 +519,30 @@ describe("parseOptionalInt", () => {
 
   it("rejects a negative walk time", () => {
     expect(parseOptionalInt(form([["walkMinutes", "-3"]]), "walkMinutes")).toBeNull();
+  });
+
+  // Zero is a real answer — you park at the spot — and must survive.
+  it("keeps a zero", () => {
+    expect(parseOptionalInt(form([["walkMinutes", "0"]]), "walkMinutes")).toBe(0);
+  });
+});
+
+describe("parseOptionalBool", () => {
+  it("reads yes and no", () => {
+    expect(parseOptionalBool(form([["dogFriendly", "yes"]]), "dogFriendly")).toBe(true);
+    expect(parseOptionalBool(form([["dogFriendly", "no"]]), "dogFriendly")).toBe(false);
+  });
+
+  // The reason this is a select and not a checkbox: an unchecked box collapses
+  // to false, so anyone who ignored the control would publish "Dog friendly:
+  // No" — asserting something they never said.
+  it("reads an unanswered field as null, not false", () => {
+    expect(parseOptionalBool(form([["dogFriendly", ""]]), "dogFriendly")).toBeNull();
+    expect(parseOptionalBool(form([]), "dogFriendly")).toBeNull();
+  });
+
+  it("treats anything unrecognised as unanswered", () => {
+    expect(parseOptionalBool(form([["dogFriendly", "maybe"]]), "dogFriendly")).toBeNull();
   });
 });
 ```
@@ -555,6 +587,22 @@ export function checkedValuesFrom(form: FormData, field: string): string[] {
     .getAll(field)
     .map(String)
     .filter(isValid);
+}
+
+/**
+ * A tri-state read for an optional boolean.
+ *
+ * Deliberately not a checkbox. An unchecked box cannot say "I don't know" — it
+ * collapses to false — so every contributor who simply ignored the control
+ * would publish "Dog friendly: No" on the spot page, asserting something they
+ * never said. Every other optional attribute treats null as "nobody said"
+ * (spec §4.7), and the detail page omits a null rather than rendering it.
+ */
+export function parseOptionalBool(form: FormData, field: string): boolean | null {
+  const raw = form.get(field);
+  if (raw === "yes") return true;
+  if (raw === "no") return false;
+  return null;
 }
 
 /**
@@ -637,8 +685,15 @@ export function AttributeFields({ current }: { current: AttributeValues }) {
       </fieldset>
 
       <label>
-        <input type="checkbox" name="dogFriendly" defaultChecked={current.dogFriendly === true} />
-        Dogs are welcome
+        Dogs
+        <select
+          name="dogFriendly"
+          defaultValue={current.dogFriendly === null ? "" : current.dogFriendly ? "yes" : "no"}
+        >
+          <option value="">Not sure</option>
+          <option value="yes">Welcome</option>
+          <option value="no">Not allowed</option>
+        </select>
       </label>
     </fieldset>
   );

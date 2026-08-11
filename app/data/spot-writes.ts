@@ -125,7 +125,21 @@ export async function addGalleryLink(
   if (error) throw error;
 }
 
-/** Editing is column-scoped by the grants in migration 5; `status` is not writable here. */
+/**
+ * Editing is column-scoped by the grants in migration 5; `status`, `score` and
+ * the counters are not writable here and attempting one is a 42501.
+ *
+ * Every field is optional and the `!== undefined` guard is what separates "not
+ * on this form" from "cleared to null". That distinction is why the edit action
+ * sends every attribute explicitly rather than only the non-empty ones —
+ * without it an attribute could be set but never removed.
+ *
+ * Returns whether a row actually changed. RLS decides who may edit, and a
+ * non-owner's update matches **zero rows without erroring** — so `error` being
+ * null does not mean anything was saved. Without this the edit form redirects
+ * to the spot page as though it worked and silently discards everything the
+ * user typed. `.select("id")` is what turns that into an answer.
+ */
 export async function updateSpot(
   supabase: SupabaseClient,
   spotId: string,
@@ -136,9 +150,13 @@ export async function updateSpot(
     region?: string | null;
     walkMinutes?: number | null;
     parkingNotes?: string | null;
+    costType?: string | null;
+    accessibility?: string[] | null;
+    terrain?: string[] | null;
+    dogFriendly?: boolean | null;
   },
-): Promise<void> {
-  const { error } = await supabase
+): Promise<boolean> {
+  const { data, error } = await supabase
     .from("spots")
     .update({
       ...(fields.name !== undefined ? { name: fields.name } : {}),
@@ -147,7 +165,14 @@ export async function updateSpot(
       ...(fields.region !== undefined ? { region: fields.region } : {}),
       ...(fields.walkMinutes !== undefined ? { walk_minutes: fields.walkMinutes } : {}),
       ...(fields.parkingNotes !== undefined ? { parking_notes: fields.parkingNotes } : {}),
+      ...(fields.costType !== undefined ? { cost_type: fields.costType } : {}),
+      ...(fields.accessibility !== undefined ? { accessibility: fields.accessibility } : {}),
+      ...(fields.terrain !== undefined ? { terrain: fields.terrain } : {}),
+      ...(fields.dogFriendly !== undefined ? { dog_friendly: fields.dogFriendly } : {}),
     })
-    .eq("id", spotId);
+    .eq("id", spotId)
+    .select("id");
+
   if (error) throw error;
+  return (data ?? []).length > 0;
 }

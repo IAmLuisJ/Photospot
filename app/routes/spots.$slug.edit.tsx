@@ -3,6 +3,12 @@ import { createSupabaseServerClient } from "~/lib/supabase.server";
 import { getCurrentProfile } from "~/data/profiles";
 import { getSpotBySlug } from "~/data/spots";
 import { updateSpot, addGalleryLink } from "~/data/spot-writes";
+import {
+  AttributeFields,
+  checkedValuesFrom,
+  parseOptionalInt,
+  parseOptionalBool,
+} from "~/components/spot/AttributeFields";
 import type { Route } from "./+types/spots.$slug.edit";
 
 export function meta({ loaderData }: Route.MetaArgs) {
@@ -41,19 +47,45 @@ export async function action({ request, params }: Route.ActionArgs) {
     return redirect(`/spots/${params.slug}/edit`, { headers });
   }
 
+  let saved: boolean;
   try {
-    // RLS decides whether this user may edit; a stranger's update matches no
-    // rows rather than erroring, so success here does not prove a change.
-    await updateSpot(supabase, spot.id, {
+    // RLS decides whether this user may edit, and a stranger's update matches
+    // no rows rather than erroring — so the return value, not the absence of an
+    // error, is what says whether anything was saved.
+    saved = await updateSpot(supabase, spot.id, {
       name: String(form.get("name") ?? spot.name),
       description: String(form.get("description") ?? "") || null,
       locality: String(form.get("locality") ?? "") || null,
       region: String(form.get("region") ?? "") || null,
-      walkMinutes: form.get("walkMinutes") ? Number(form.get("walkMinutes")) : null,
       parkingNotes: String(form.get("parkingNotes") ?? "") || null,
+      // Every attribute is sent on every save, so unchecking the last box
+      // clears the column. Sending only the non-empty ones would let an
+      // attribute be set but never removed.
+      //
+      // parseOptionalInt rather than `form.get(x) ? Number(x) : null`, which
+      // read "0" as falsy and stored null — turning "you park at the spot"
+      // into "nobody said".
+      walkMinutes: parseOptionalInt(form, "walkMinutes"),
+      costType: String(form.get("costType") ?? "") || null,
+      accessibility: checkedValuesFrom(form, "accessibility"),
+      terrain: checkedValuesFrom(form, "terrain"),
+      // Tri-state, not a checkbox: an unchecked box cannot say "I don't
+      // know", and would publish "Dog friendly: No" for every contributor who
+      // ignored it.
+      dogFriendly: parseOptionalBool(form, "dogFriendly"),
     });
   } catch {
     return routeData({ error: "Could not save those changes." }, { headers });
+  }
+
+  if (!saved) {
+    // Reached by anyone signed in who did not submit this spot: the detail page
+    // offers everyone the edit link. Saying so beats redirecting to a page that
+    // looks saved and is not.
+    return routeData(
+      { error: "Only the person who added this spot, or an admin, can edit it." },
+      { headers, status: 403 },
+    );
   }
 
   return redirect(`/spots/${params.slug}`, { headers });
@@ -89,18 +121,21 @@ export default function EditSpot({ loaderData, actionData }: Route.ComponentProp
           <input name="region" defaultValue={spot.region ?? ""} />
         </label>
         <label>
-          Walk from parking (minutes)
-          <input
-            name="walkMinutes"
-            type="number"
-            min={0}
-            defaultValue={spot.walkMinutes ?? ""}
-          />
-        </label>
-        <label>
           Parking notes
           <input name="parkingNotes" defaultValue={spot.parkingNotes ?? ""} />
         </label>
+
+        {/* Owns walkMinutes, so there is no second input for it above. */}
+        <AttributeFields
+          current={{
+            costType: spot.costType,
+            walkMinutes: spot.walkMinutes,
+            accessibility: spot.accessibility,
+            terrain: spot.terrain,
+            dogFriendly: spot.dogFriendly,
+          }}
+        />
+
         <button type="submit">Save changes</button>
       </Form>
 

@@ -9,10 +9,16 @@ import {
   filtersToSearchParams,
   type ExploreFilters,
 } from "~/domain/filters/explore-filters";
+import {
+  hasAnyAttributeFilter,
+  NO_ATTRIBUTE_FILTERS,
+  type AttributeFilters,
+} from "~/domain/filters/attribute-filters";
 import { snapBoundsToGrid } from "~/domain/geo/bounds";
 import { SpotMap } from "~/components/map/SpotMap";
 import { SpotCard } from "~/components/explore/SpotCard";
 import { ExploreLayout, photoDepthFor } from "~/components/explore/ExploreLayout";
+import { FilterBar, hiddenByFiltersMessage } from "~/components/explore/FilterBar";
 import type { Route } from "./+types/home";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -42,12 +48,29 @@ export async function loader({ request }: Route.LoaderArgs) {
     supabase.from("shoot_types").select("id, slug, label").order("sort_order"),
   ]);
 
+  // How many spots in view the attribute filters removed. Only worth a second
+  // query when something is actually filtered.
+  //
+  // Both counts are capped by the RPC at 500, so on a busy viewport this
+  // undercounts — it is a hint about missing data, not a figure to quote, and
+  // the wording keeps it that way.
+  const unfilteredCount = hasAnyAttributeFilter(filters.attributes)
+    ? (
+        await listSpotsInViewport(
+          supabase,
+          { ...snapped, attributes: NO_ATTRIBUTE_FILTERS },
+          photoDepthFor(filters.view),
+        )
+      ).length
+    : spots.length;
+
   return routeData(
     {
       profile,
       spots,
       shootTypes: shootTypes.data ?? [],
       filters,
+      hiddenByFilters: unfilteredCount - spots.length,
       supabaseUrl: env.supabaseUrl,
       mapStyleUrl: env.mapStyleUrl,
     },
@@ -56,7 +79,8 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function Explore({ loaderData }: Route.ComponentProps) {
-  const { profile, spots, shootTypes, filters, supabaseUrl, mapStyleUrl } = loaderData;
+  const { profile, spots, shootTypes, filters, hiddenByFilters, supabaseUrl, mapStyleUrl } =
+    loaderData;
   const [, setSearchParams] = useSearchParams();
   const [hovered, setHovered] = useState<string | null>(null);
 
@@ -75,6 +99,13 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
   );
 
   const onSelect = useCallback((slug: string) => setHovered(slug), []);
+
+  const onAttributesChange = useCallback(
+    (attributes: AttributeFilters) => update({ attributes }),
+    [update],
+  );
+
+  const hiddenMessage = hiddenByFiltersMessage(hiddenByFilters);
 
   const map = useMemo(
     () => (
@@ -95,6 +126,7 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
     spots.length === 0 ? (
       <p className="explore__empty">
         No spots in view yet. Try zooming out, or clearing the filter.
+        {hiddenMessage && <> {hiddenMessage}</>}
       </p>
     ) : (
       <ul className="explore__list">
@@ -133,6 +165,8 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
           </button>
         ))}
       </div>
+
+      <FilterBar filters={filters.attributes} onChange={onAttributesChange} />
 
       <div className="explore__views" role="group" aria-label="View">
         {(["split", "map", "gallery"] as const).map((v) => (
@@ -173,5 +207,14 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
     </>
   );
 
-  return <ExploreLayout view={filters.view} map={map} results={results} controls={controls} />;
+  const resultsWithNotice = (
+    <>
+      {hiddenMessage && spots.length > 0 && <p className="explore__hidden">{hiddenMessage}</p>}
+      {results}
+    </>
+  );
+
+  return (
+    <ExploreLayout view={filters.view} map={map} results={resultsWithNotice} controls={controls} />
+  );
 }

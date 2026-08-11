@@ -53,6 +53,40 @@ body {
   border-color: #1f2937;
 }
 
+/* Same pill shape as the view controls, including the aria-pressed state, so
+   the visual state and the accessibility state cannot disagree. */
+.filter-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+  width: 100%;
+}
+.filter-bar__group { display: flex; gap: 0.25rem; flex-wrap: wrap; }
+.filter-bar__walk { display: inline-flex; align-items: center; gap: 0.3rem; font-size: 0.85rem; }
+.filter-bar__walk select { font: inherit; padding: 0.2rem 0.3rem; border-radius: 6px; }
+.filter-bar button {
+  padding: 0.2rem 0.6rem;
+  border: 1px solid rgb(0 0 0 / 0.2);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+  font-size: 0.85rem;
+}
+.filter-bar button[aria-pressed="true"] {
+  background: #1f2937;
+  color: white;
+  border-color: #1f2937;
+}
+.filter-bar__clear { margin-left: auto; text-decoration: underline; }
+
+.explore__hidden {
+  font-size: 0.85rem;
+  opacity: 0.75;
+  margin: 0 0 0.5rem;
+}
+
 .explore--split {
   grid-template-columns: 1fr;
 }

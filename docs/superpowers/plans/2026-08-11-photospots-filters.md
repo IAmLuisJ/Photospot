@@ -1847,6 +1847,7 @@ Create `app/components/explore/FilterBar.test.tsx`:
 ```ts
 import { describe, it, expect } from "vitest";
 import { toggleValue, hiddenByFiltersMessage, activeFilterCount } from "./FilterBar";
+import { NO_ATTRIBUTE_FILTERS } from "~/domain/filters/attribute-filters";
 
 describe("toggleValue", () => {
   it("adds a value that is not there", () => {
@@ -1865,7 +1866,7 @@ describe("toggleValue", () => {
 });
 
 describe("activeFilterCount", () => {
-  it("counts each selected value, so the badge matches what is on", () => {
+  it("counts each selected value, so the badge matches what is lit up", () => {
     expect(
       activeFilterCount({
         costTypes: ["free", "park_pass"],
@@ -1877,42 +1878,45 @@ describe("activeFilterCount", () => {
   });
 
   it("is zero when nothing is filtered", () => {
-    expect(
-      activeFilterCount({
-        costTypes: [],
-        maxWalkMinutes: null,
-        accessibility: [],
-        dogFriendlyOnly: false,
-      }),
-    ).toBe(0);
+    expect(activeFilterCount(NO_ATTRIBUTE_FILTERS)).toBe(0);
   });
 
+  // Zero minutes is a real filter and a truthiness check would miss it.
   it("counts a zero-minute walk", () => {
-    expect(
-      activeFilterCount({
-        costTypes: [],
-        maxWalkMinutes: 0,
-        accessibility: [],
-        dogFriendlyOnly: false,
-      }),
-    ).toBe(1);
+    expect(activeFilterCount({ ...NO_ATTRIBUTE_FILTERS, maxWalkMinutes: 0 })).toBe(1);
   });
 });
 
 describe("hiddenByFiltersMessage", () => {
-  // Cold start is the dominant risk (spec §14). "No spots match" and "nobody
-  // has filled this in yet" look identical to a user and mean opposite things.
   it("says nothing when no spots were hidden", () => {
     expect(hiddenByFiltersMessage(0)).toBeNull();
   });
 
-  it("explains a single hidden spot in the singular", () => {
-    expect(hiddenByFiltersMessage(1)).toContain("1 spot");
-    expect(hiddenByFiltersMessage(1)).not.toContain("1 spots");
+  it("says nothing for a negative count rather than inventing a sentence", () => {
+    expect(hiddenByFiltersMessage(-3)).toBeNull();
   });
 
-  it("explains several", () => {
-    expect(hiddenByFiltersMessage(4)).toContain("4 spots");
+  it("explains a single hidden spot in the singular", () => {
+    const message = hiddenByFiltersMessage(1)!;
+    expect(message).toContain("1 spot ");
+    expect(message).not.toContain("1 spots");
+    expect(message).toContain(" does not match");
+  });
+
+  it("explains several in the plural", () => {
+    const message = hiddenByFiltersMessage(4)!;
+    expect(message).toContain("4 spots");
+    expect(message).toContain(" do not match");
+  });
+
+  // The count mixes two causes — a spot that genuinely does not match, and a
+  // spot whose data is missing — and the summary rows cannot tell them apart.
+  // Asserting the second would be wrong for the first, which is the common
+  // case, so the copy must not claim it.
+  it("does not assert that the hidden spots are missing data", () => {
+    const message = hiddenByFiltersMessage(3)!;
+    expect(message).not.toMatch(/hidden because/i);
+    expect(message).toMatch(/including any/i);
   });
 });
 ```
@@ -1922,14 +1926,8 @@ describe("hiddenByFiltersMessage", () => {
 Create `app/components/explore/FilterBar.tsx`:
 
 ```tsx
-import {
-  ACCESSIBILITY_OPTIONS,
-  COST_TYPE_OPTIONS,
-} from "~/domain/spots/attributes";
-import {
-  NO_ATTRIBUTE_FILTERS,
-  type AttributeFilters,
-} from "~/domain/filters/attribute-filters";
+import { ACCESSIBILITY_OPTIONS, COST_TYPE_OPTIONS } from "~/domain/spots/attributes";
+import { NO_ATTRIBUTE_FILTERS, type AttributeFilters } from "~/domain/filters/attribute-filters";
 
 export function toggleValue(values: readonly string[], value: string): string[] {
   return values.includes(value) ? values.filter((v) => v !== value) : [...values, value];
@@ -1940,21 +1938,30 @@ export function activeFilterCount(filters: AttributeFilters): number {
   return (
     filters.costTypes.length +
     filters.accessibility.length +
+    // `!== null`, not truthiness: a zero-minute walk is a real filter.
     (filters.maxWalkMinutes === null ? 0 : 1) +
     (filters.dogFriendlyOnly ? 1 : 0)
   );
 }
 
 /**
- * Spec §14: the map is thin, and "no spots match your filters" reads the same
- * as "nobody has filled this in yet" while meaning something entirely
- * different. Naming the number turns a dead end into a prompt to contribute.
+ * Spec §14: the map is thin, so a filtered view emptying out needs explaining.
+ *
+ * The count is simply how many spots the filters removed, and it deliberately
+ * does **not** claim why. Two very different things are in it — a spot whose
+ * walk time is 25 minutes, and a spot whose walk time nobody recorded — and
+ * distinguishing them needs the attribute values back from the query, which the
+ * summary rows do not carry. Saying "nobody has filled this in" would be
+ * flatly wrong for the first case, which is the common one.
+ *
+ * So the number is stated plainly and the missing-data case is mentioned as a
+ * possibility rather than asserted as the cause.
  */
 export function hiddenByFiltersMessage(hidden: number): string | null {
   if (hidden <= 0) return null;
   const spots = hidden === 1 ? "1 spot" : `${hidden} spots`;
-  const verb = hidden === 1 ? "is" : "are";
-  return `${spots} in view ${verb} hidden because nobody has filled in the detail you filtered on.`;
+  const verb = hidden === 1 ? "does" : "do";
+  return `${spots} in view ${verb} not match — including any where nobody has filled that detail in yet.`;
 }
 
 /** Any is null rather than a large number, so it reads as "no filter" downstream. */
@@ -1965,6 +1972,11 @@ const WALK_CHOICES: readonly { value: number | null; label: string }[] = [
   { value: 20, label: "Under 20 min" },
 ];
 
+/**
+ * Every control hands the whole next filter object up to the route, which
+ * writes it to the URL; the value comes back down through the loader. One
+ * direction, so a control can never disagree with the address bar.
+ */
 export function FilterBar({
   filters,
   onChange,
@@ -1982,7 +1994,9 @@ export function FilterBar({
             key={o.value}
             type="button"
             aria-pressed={filters.costTypes.includes(o.value)}
-            onClick={() => onChange({ ...filters, costTypes: toggleValue(filters.costTypes, o.value) })}
+            onClick={() =>
+              onChange({ ...filters, costTypes: toggleValue(filters.costTypes, o.value) })
+            }
           >
             {o.label}
           </button>
@@ -1990,7 +2004,7 @@ export function FilterBar({
       </div>
 
       <label className="filter-bar__walk">
-        Walk from parking
+        Walk
         <select
           value={filters.maxWalkMinutes === null ? "" : String(filters.maxWalkMinutes)}
           onChange={(e) =>
@@ -2032,7 +2046,7 @@ export function FilterBar({
       </button>
 
       {count > 0 && (
-        <button type="button" onClick={() => onChange(NO_ATTRIBUTE_FILTERS)}>
+        <button type="button" className="filter-bar__clear" onClick={() => onChange(NO_ATTRIBUTE_FILTERS)}>
           Clear {count} {count === 1 ? "filter" : "filters"}
         </button>
       )}

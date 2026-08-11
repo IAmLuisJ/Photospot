@@ -1,27 +1,9 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-import { computeScore, type SpotCounters } from "../app/domain/scoring/score";
+import { computeScore } from "../app/domain/scoring/score";
 import { DEFAULT_WEIGHTS, type ScoreWeights } from "../app/domain/scoring/weights";
+import { COUNTER_COLUMNS, toCounters, type CounterRow } from "../app/data/scores";
 
 const PAGE_SIZE = 500;
-
-interface CounterRow {
-  id: string;
-  shoot_type_upvote_count: number;
-  shoot_again_yes_count: number;
-  shoot_again_no_count: number;
-  comment_count: number;
-  scouting_photo_count: number;
-  session_photo_count: number;
-}
-
-const toCounters = (row: CounterRow): SpotCounters => ({
-  shootTypeUpvoteCount: row.shoot_type_upvote_count,
-  shootAgainYesCount: row.shoot_again_yes_count,
-  shootAgainNoCount: row.shoot_again_no_count,
-  commentCount: row.comment_count,
-  scoutingPhotoCount: row.scouting_photo_count,
-  sessionPhotoCount: row.session_photo_count,
-});
 
 /** Recomputes every stored score. Run after any change to ScoreWeights. */
 export async function backfillScores(
@@ -34,16 +16,20 @@ export async function backfillScores(
   for (;;) {
     const { data, error } = await supabase
       .from("spots")
-      .select(
-        "id, shoot_type_upvote_count, shoot_again_yes_count, shoot_again_no_count, comment_count, scouting_photo_count, session_photo_count",
-      )
+      // Shared with refreshSpotScore. Two copies of this projection is exactly
+      // how the batch path and the request path would come to disagree about
+      // what a counter means.
+      .select(`id, ${COUNTER_COLUMNS}`)
       .order("id", { ascending: true })
       .range(from, from + PAGE_SIZE - 1);
 
     if (error) throw error;
     if (!data || data.length === 0) break;
 
-    for (const row of data as CounterRow[]) {
+    // The shared CounterRow deliberately carries only the counters, since
+    // refreshSpotScore already knows which spot it is updating. Paging needs
+    // the id as well.
+    for (const row of data as (CounterRow & { id: string })[]) {
       const score = computeScore(toCounters(row), weights);
       const { error: updateError } = await supabase
         .from("spots")

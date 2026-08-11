@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeAll } from "vitest";
-import { createSupabaseServerClient } from "./supabase.server";
+import { createSupabaseServerClient, createSupabaseAdminClient } from "./supabase.server";
 
 // readEnv() runs inside createSupabaseServerClient, so these must be present.
 // The db test project loads them from .env; the unit project does not, and
@@ -38,5 +38,32 @@ describe("createSupabaseServerClient", () => {
     const b = createSupabaseServerClient(request());
     a.headers.append("Set-Cookie", "one=1");
     expect(b.headers.get("Set-Cookie")).toBeNull();
+  });
+});
+
+describe("createSupabaseAdminClient", () => {
+  const base = {
+    supabaseUrl: "http://127.0.0.1:54321",
+    supabaseAnonKey: "anon",
+    mapStyleUrl: "https://example.test/style.json",
+  };
+
+  // Loud, not silent: a missing key here means votes land and scores quietly
+  // stop moving, which nothing else in the system would report.
+  it("refuses to build a client without a service role key", () => {
+    expect(() => createSupabaseAdminClient({ ...base, supabaseServiceRoleKey: undefined })).toThrow(
+      /SUPABASE_SERVICE_ROLE_KEY/,
+    );
+  });
+
+  it("builds a client when the key is present", () => {
+    expect(createSupabaseAdminClient({ ...base, supabaseServiceRoleKey: "service" })).toBeDefined();
+  });
+
+  // Takes its environment as an argument precisely so the failure case above is
+  // testable without mutating process.env, which the beforeAll here populates.
+  it("falls back to the process environment when given nothing", () => {
+    process.env.SUPABASE_SERVICE_ROLE_KEY ??= "test-service-key";
+    expect(createSupabaseAdminClient()).toBeDefined();
   });
 });

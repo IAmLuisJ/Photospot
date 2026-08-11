@@ -3,8 +3,8 @@ import {
   parseCookieHeader,
   serializeCookieHeader,
 } from "@supabase/ssr";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { readEnv } from "./env.server";
+import { createClient, type SupabaseClient } from "@supabase/supabase-js";
+import { readEnv, type Env } from "./env.server";
 
 export interface SupabaseContext {
   supabase: SupabaseClient;
@@ -38,4 +38,30 @@ export function createSupabaseServerClient(request: Request): SupabaseContext {
   });
 
   return { supabase, headers };
+}
+
+/**
+ * Bypasses RLS. Only for writing columns the application roles deliberately
+ * cannot write — `spots.score` is the whole reason this exists, because score
+ * is the default sort order and a user-writable rank is rank manipulation.
+ *
+ * This file is `.server.ts`, so the key can never reach the browser bundle.
+ * Takes its environment as an argument so the missing-key path is testable
+ * without mutating `process.env`.
+ *
+ * Throws rather than returning null: a missing key means votes keep landing
+ * while scores quietly stop moving, and nothing else in the system would
+ * notice. The caller decides whether that failure should reach the user — for
+ * a vote that already succeeded, it should not.
+ */
+export function createSupabaseAdminClient(env: Env = readEnv()): SupabaseClient {
+  if (!env.supabaseServiceRoleKey) {
+    throw new Error(
+      "SUPABASE_SERVICE_ROLE_KEY is required to update derived columns such as spots.score.",
+    );
+  }
+
+  return createClient(env.supabaseUrl, env.supabaseServiceRoleKey, {
+    auth: { persistSession: false },
+  });
 }

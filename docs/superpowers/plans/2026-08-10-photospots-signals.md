@@ -1840,7 +1840,11 @@ beforeAll(async () => {
   voter = await createTestUser("Score Voter");
   const admin = serviceClient();
 
-  const { data: types } = await admin.from("shoot_types").select("id, slug").eq("slug", "family");
+  const { data: types, error: typeError } = await admin
+    .from("shoot_types")
+    .select("id, slug")
+    .eq("slug", "family");
+  if (typeError) throw typeError;
   familyId = types![0].id;
 
   const { data, error } = await admin
@@ -1865,23 +1869,32 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await serviceClient().from("spots").delete().eq("id", spotId);
+  const { error } = await serviceClient().from("spots").delete().eq("id", spotId);
+  if (error) throw error;
   await deleteTestUser(voter.id);
 });
 
 const storedScore = async (): Promise<number> => {
-  const { data } = await serviceClient().from("spots").select("score").eq("id", spotId).single();
+  const { data, error } = await serviceClient()
+    .from("spots")
+    .select("score")
+    .eq("id", spotId)
+    .single();
+  if (error) throw error;
   // numeric arrives from PostgREST as a string, to avoid precision loss.
-  return Number(data!.score);
+  return Number(data.score);
 };
 
+// These tests run in order and share state: each builds on the activity of the
+// one before it.
 describe("refreshSpotScore", () => {
   it("starts at zero, since nothing has happened to the spot", async () => {
     expect(await storedScore()).toBe(0);
   });
 
-  // The gap this closes: authenticated cannot write spots.score, so a vote
-  // moves the counters and leaves the score behind.
+  // The gap this closes. `authenticated` has no UPDATE privilege on
+  // spots.score, deliberately — score is the default sort order, so a
+  // user-writable column is rank manipulation.
   it("leaves the score stale until it is called", async () => {
     await castSignal(voter.client, {
       spotId,
@@ -1889,13 +1902,14 @@ describe("refreshSpotScore", () => {
       shootTypeId: familyId,
     });
 
-    const { data } = await serviceClient()
+    const { data, error } = await serviceClient()
       .from("spots")
       .select("shoot_type_upvote_count, score")
       .eq("id", spotId)
       .single();
-    expect(data!.shoot_type_upvote_count).toBe(1);
-    expect(Number(data!.score)).toBe(0);
+    if (error) throw error;
+    expect(data.shoot_type_upvote_count).toBe(1);
+    expect(Number(data.score)).toBe(0);
   });
 
   it("writes the weighted score the counters imply", async () => {
@@ -1915,14 +1929,54 @@ describe("refreshSpotScore", () => {
   });
 
   it("follows the counters back down when a vote is retracted", async () => {
-    await serviceClient()
+    const { error } = await serviceClient()
       .from("signals")
       .delete()
       .eq("spot_id", spotId)
       .eq("kind", "shoot_type_upvote");
+    if (error) throw error;
 
     const expected = DEFAULT_WEIGHTS.comment + DEFAULT_WEIGHTS.shootAgainYes;
     expect(await refreshSpotScore(serviceClient(), spotId)).toBe(expected);
+  });
+
+  // A "no" answer is worth -1.5, so the arithmetic has to survive the sign.
+  it("handles a negative contribution without clamping it", async () => {
+    await castSignal(voter.client, { spotId, kind: "shoot_again", shootTypeId: null }, 0);
+
+    const expected = DEFAULT_WEIGHTS.comment + DEFAULT_WEIGHTS.shootAgainNo;
+    expect(await refreshSpotScore(serviceClient(), spotId)).toBe(expected);
+    expect(expected).toBeLessThan(0);
+  });
+
+  // The whole point of the service-role client. If this ever starts passing,
+  // spots.score has become writable by application roles and the ranking is
+  // user-controlled.
+  it("cannot be done with the caller's own client, because score is not theirs to write", async () => {
+    const { error } = await voter.client.from("spots").update({ score: 9999 }).eq("id", spotId);
+    expect(error?.code).toBe("42501");
+    expect(await storedScore()).toBeLessThan(9999);
+  });
+
+  // Handed the wrong client — a live possibility, since the route action holds
+  // both — the read succeeds and only the write is refused. Swallowing that
+  // would leave every score frozen with nothing failing anywhere.
+  it("throws when handed a client that may not write the score", async () => {
+    const before = await storedScore();
+
+    await expect(refreshSpotScore(voter.client, spotId)).rejects.toMatchObject({
+      code: "42501",
+    });
+    expect(await storedScore()).toBe(before);
+  });
+
+  // PGRST116 specifically, not merely "something threw": with the read error
+  // ignored, `data` is null and the mapping throws a TypeError instead, which
+  // a looser assertion cannot tell apart from the error being propagated.
+  it("throws rather than silently skipping an unknown spot", async () => {
+    await expect(
+      refreshSpotScore(serviceClient(), "00000000-0000-0000-0000-000000000000"),
+    ).rejects.toMatchObject({ code: "PGRST116" });
   });
 });
 ```
@@ -1944,7 +1998,11 @@ import type { SupabaseClient } from "@supabase/supabase-js";
 import { computeScore, type SpotCounters } from "../domain/scoring/score";
 import { DEFAULT_WEIGHTS, type ScoreWeights } from "../domain/scoring/weights";
 
-/** The trigger-maintained columns, in one place so the backfill and the request path cannot drift. */
+/**
+ * The trigger-maintained columns, in one place so the batch path
+ * (`scripts/backfill-scores.ts`) and the request path cannot drift on what a
+ * counter means.
+ */
 export const COUNTER_COLUMNS =
   "shoot_type_upvote_count, shoot_again_yes_count, shoot_again_no_count, comment_count, scouting_photo_count, session_photo_count";
 
@@ -1967,20 +2025,22 @@ export const toCounters = (row: CounterRow): SpotCounters => ({
 });
 
 /**
- * Recompute and store one spot's score. Spec §7: the counters are dumb and live
- * in Postgres, the weights live in TypeScript, and this is where they meet.
+ * Recompute and store one spot's score. Spec §7: the counters are dumb and
+ * live in Postgres, the weights are testable and live in TypeScript, and this
+ * is the seam where they meet.
  *
  * Requires a service-role client. `authenticated` has no UPDATE privilege on
- * `spots.score` and must not — score is the default sort order, so a writable
- * column is rank manipulation.
+ * `spots.score` and must not have one — score is the default sort order, so a
+ * writable column is rank manipulation.
  *
  * Read-then-write, not one atomic statement: two votes landing together can
  * both read the same counters and write the same score, leaving it one vote
- * behind. The counters themselves are always right (the recount trigger is
- * statement-level and runs inside the vote's transaction), so this is a stale
- * derived number, not lost data, and `npm run backfill:scores` repairs it.
- * Making it atomic would mean doing the arithmetic in SQL — a second copy of
- * the weights in a second language, which is the drift spec §7 exists to stop.
+ * behind. The counters themselves are never wrong — the recount trigger is
+ * statement-level and runs inside the vote's own transaction — so this is a
+ * stale derived number, not lost data, and `npm run backfill:scores` repairs
+ * it. Making it atomic would mean doing the arithmetic in SQL, which is a
+ * second copy of the weights in a second language: precisely the drift spec §7
+ * exists to prevent.
  */
 export async function refreshSpotScore(
   admin: SupabaseClient,
@@ -2035,7 +2095,28 @@ The rest of the file is unchanged. Two copies of this mapping is exactly how the
 npm run test:db -- score-refresh backfill
 ```
 
-Expected: 5 passing in `score-refresh`, and every existing test in `tests/db/backfill.test.ts` still passing.
+Expected: 9 passing in `score-refresh`, and every existing test in `tests/db/backfill.test.ts` still passing.
+
+- [ ] **Step 5a: Mutation-test the write path**
+
+| Mutation | Test that must go red |
+| --- | --- |
+| Make the `update` a no-op | "writes the weighted score the counters imply" |
+| Read error → `if (false) throw error` | "throws rather than silently skipping an unknown spot" |
+| Write error → drop `if (writeError) throw writeError` | "throws when handed a client that may not write the score" |
+| `shootAgainNoCount: row.shoot_again_no_count` → `0` | "handles a negative contribution without clamping it" |
+| `commentCount: row.comment_count` → `0` | four tests, across `score-refresh` **and** `backfill` |
+| Drop `comment_count` from `COUNTER_COLUMNS` | seven tests, across both files |
+| `if (!env.supabaseServiceRoleKey)` → `if (false)` | "refuses to build a client without a service role key" |
+| Drop `supabaseServiceRoleKey` from `readEnv`'s return | "carries the service role key through" and "falls back to the process environment" |
+| `z.string().min(1).optional()` → `z.string().optional()` | "rejects an empty service role key instead of treating it as absent" |
+
+Two of these need tests that are easy to leave out, and both survived the first draft:
+
+- **The write error.** Nothing forces a write to fail against a service-role client, so the natural test does not exist. Hand `refreshSpotScore` the *voter's* client instead: the read succeeds and only the `update` is refused, which is exactly the mistake the route could make since it holds both clients. Swallowing that error would freeze every score with nothing failing anywhere.
+- **The read error.** Assert `PGRST116` specifically, not merely that something threw. With the read error ignored, `data` is null and the mapping throws a `TypeError` instead — a `rejects.toBeTruthy()` cannot tell the two apart, and the mutation survives.
+
+The last two rows in the table are also what prove the shared counter mapping is load-bearing: a single change to `toCounters` or `COUNTER_COLUMNS` turns tests red in both the request path and the batch path, which is the drift this refactor exists to make impossible.
 
 - [ ] **Step 6: Add the service-role client, with a unit test**
 

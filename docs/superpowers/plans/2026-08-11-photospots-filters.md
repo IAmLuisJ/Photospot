@@ -2124,12 +2124,20 @@ describe("resolveView", () => {
     expect(resolveView(null, null)).toBe("split");
   });
 
+  // The cookie is stored input and gets validated exactly like the URL does.
   it("ignores a nonsense cookie rather than trusting stored input", () => {
     expect(resolveView(null, "hologram")).toBe("split");
   });
 
-  it("ignores a nonsense URL value", () => {
+  it("ignores a nonsense URL value but still honours the cookie", () => {
     expect(resolveView("hologram", "map")).toBe("map");
+  });
+
+  it("accepts every real view from either source", () => {
+    for (const view of ["split", "map", "gallery"] as const) {
+      expect(resolveView(view, null)).toBe(view);
+      expect(resolveView(null, view)).toBe(view);
+    }
   });
 });
 
@@ -2146,6 +2154,10 @@ describe("viewPreferenceCookie", () => {
     expect(header).toMatch(/HttpOnly/i);
     expect(header).toMatch(/SameSite=Lax/i);
     expect(header).toMatch(/Max-Age=\d{7,}/);
+  });
+
+  it("returns null for a request with no cookie at all", async () => {
+    expect(await viewPreferenceCookie.parse(null)).toBeNull();
   });
 });
 ```
@@ -2164,8 +2176,8 @@ export const viewPreferenceCookie = createCookie("photospots_view", {
   path: "/",
   sameSite: "lax",
   httpOnly: true,
-  // A year. The preference is not sensitive and re-choosing it every session
-  // is exactly the friction spec §8's "remembered per user" is avoiding.
+  // A year. The preference is not sensitive, and re-choosing it every session
+  // is exactly the friction spec §8's "remembered per user" exists to avoid.
   maxAge: 60 * 60 * 24 * 365,
 });
 
@@ -2173,8 +2185,9 @@ export const viewPreferenceCookie = createCookie("photospots_view", {
  * The URL wins over the cookie, always.
  *
  * A view in the URL is what a shared link carries, and spec §8 makes every view
- * a shareable link on purpose. If the cookie won, opening a friend's gallery
- * link would show your own remembered split view and the link would look broken.
+ * a shareable link on purpose — a photographer sending a family "here are the
+ * family-photo spots near you". If the cookie won, opening that link would show
+ * the recipient their own remembered view and the link would look broken.
  *
  * The cookie is stored input and is validated exactly like the URL is: a value
  * that is not a known view is ignored rather than trusted.
@@ -2205,9 +2218,11 @@ In `home.tsx`, read the raw `view` param before `parseExploreFilters` normalises
 
 - [ ] **Step 4: Verify by hand**
 
-Choose gallery, close the tab, reopen `/` with no query string, and confirm gallery renders **server-side** — view source and check the markup, rather than trusting the rendered page, since a client-side correction would look identical while producing a flash of the wrong layout.
+Choose gallery, close the tab, reopen `/` with no query string, and confirm gallery renders **server-side** — check the markup with `curl`, not the rendered page, since a client-side correction looks identical while producing a flash of the wrong layout. `curl -c jar -b jar` against `/?view=gallery` then `/` is enough; grep for `explore--gallery` in the HTML.
 
 Then open `/?view=split` and confirm split wins, and that clicking between views still works — that is the bug the always-write-`view` change in task 5 exists to prevent, so confirm it directly.
+
+**Note what this does to the stored preference, and check it rather than assuming.** Following someone else's `?view=split` link overwrites your remembered choice, because the loader cannot tell a click from a shared link — the view buttons set the same search parameter. Distinguishing them would mean posting to an action on click, a round trip on every view switch. Left as is; the comment in the loader says so, and a `curl -c jar -b jar` sequence confirms the cookie really does change.
 
 - [ ] **Step 5: Commit**
 

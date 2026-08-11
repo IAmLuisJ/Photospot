@@ -15,6 +15,7 @@ import {
   type AttributeFilters,
 } from "~/domain/filters/attribute-filters";
 import { snapBoundsToGrid } from "~/domain/geo/bounds";
+import { resolveView, viewPreferenceCookie } from "~/lib/view-preference.server";
 import { SpotMap } from "~/components/map/SpotMap";
 import { SpotCard } from "~/components/explore/SpotCard";
 import { ExploreLayout, photoDepthFor } from "~/components/explore/ExploreLayout";
@@ -36,7 +37,32 @@ export async function loader({ request }: Route.LoaderArgs) {
   const { supabase, headers } = createSupabaseServerClient(request);
   const env = readEnv();
   const url = new URL(request.url);
-  const filters = parseExploreFilters(url.searchParams);
+
+  // Read the raw parameter before parseExploreFilters normalises it: it turns
+  // an absent view into "split", which is indistinguishable from an explicit
+  // one and would override the remembered choice on every visit.
+  const rawView = url.searchParams.get("view");
+  const remembered = await viewPreferenceCookie.parse(request.headers.get("Cookie"));
+  const view = resolveView(rawView, typeof remembered === "string" ? remembered : null);
+  const filters = { ...parseExploreFilters(url.searchParams), view };
+
+  // Written whenever the URL carried a view — which includes following someone
+  // else's shared link, so that does update your remembered choice. Verified,
+  // not assumed: choosing gallery then opening a shared `?view=split` link
+  // leaves the cookie on split.
+  //
+  // Distinguishing "I clicked a view" from "I followed a link" is not possible
+  // here, because the view buttons set the same search parameter a shared link
+  // carries. Doing it properly would mean posting to an action on click. Left
+  // as is: the view you last looked at is a reasonable thing to remember, and
+  // the alternative costs a round trip on every view switch.
+  //
+  // Appended to the headers createSupabaseServerClient returned rather than a
+  // fresh object: that one carries refreshed Supabase session cookies, and
+  // replacing it signs the user out on their next request.
+  if (rawView !== null && rawView === view) {
+    headers.append("Set-Cookie", await viewPreferenceCookie.serialize(view));
+  }
 
   // Snap before querying so small pans produce the identical bounding box and
   // the previous result can be reused (spec §10).

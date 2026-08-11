@@ -81,7 +81,7 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 - Create: `supabase/migrations/20260810000009_signals.sql`
 - Test: `tests/db/signal-summary.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/db/signal-summary.test.ts`:
 
@@ -345,7 +345,7 @@ describe("spot_signal_summary", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail for the right reason**
+- [x] **Step 2: Run the test and watch it fail for the right reason**
 
 ```bash
 npm run test:db -- signal-summary
@@ -353,7 +353,7 @@ npm run test:db -- signal-summary
 
 Expected: every test fails with `Could not find the function public.spot_signal_summary(p_spot_id)` — the function does not exist yet. A failure mentioning anything else means the fixture is wrong, not the feature.
 
-- [ ] **Step 3: Write the migration**
+- [x] **Step 3: Write the migration**
 
 Create `supabase/migrations/20260810000009_signals.sql`:
 
@@ -461,7 +461,7 @@ grant execute on function public.spot_signal_summary(uuid) to anon, authenticate
 grant insert, delete on public.shoot_types to service_role;
 ```
 
-- [ ] **Step 4: Apply the migration and run the test**
+- [x] **Step 4: Apply the migration and run the test**
 
 ```bash
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH" && npx supabase db reset
@@ -475,7 +475,7 @@ npm run test:db -- signal-summary
 
 Expected: 9 passing.
 
-- [ ] **Step 5: Mutation-test every clause that a test claims to guard**
+- [x] **Step 5: Mutation-test every clause that a test claims to guard**
 
 Each row below is one temporary edit to the migration, followed by `npx supabase db reset` and `npm run test:db -- signal-summary`. Exactly the named test must go red, and the other eight must stay green. Restore the clause and reset before moving to the next row.
 
@@ -493,7 +493,7 @@ Row 7 is the reason the guard is written with parentheses at all. `and` binds ti
 
 Rows 1–3 are the point of the probe shoot type. Against the seeded rows alone all three of those mutations pass every assertion, because the seed sets `sort_order = id * 10` and id order, sort_order order and label order all coincide — a test that only checks `sort_order` is non-decreasing catches nothing but a full reversal (row 4). If any mutation here leaves the suite green, the test is not guarding what it claims and must be fixed before continuing.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add supabase/migrations/20260810000009_signals.sql tests/db/signal-summary.test.ts
@@ -532,7 +532,7 @@ EOF
 - Create: `app/domain/comments/comment.ts`
 - Test: `app/domain/comments/comment.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `app/domain/comments/comment.test.ts`:
 
@@ -575,7 +575,7 @@ describe("validateComment", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 ```bash
 npm run test:unit -- comment
@@ -583,7 +583,7 @@ npm run test:unit -- comment
 
 Expected: FAIL — `Failed to resolve import "./comment"`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `app/domain/comments/comment.ts`:
 
@@ -620,7 +620,7 @@ export function validateComment(body: string): ValidationResult {
 }
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 ```bash
 npm run test:unit -- comment
@@ -628,13 +628,13 @@ npm run test:unit -- comment
 
 Expected: 6 passing.
 
-- [ ] **Step 5: Mutation-test the trim**
+- [x] **Step 5: Mutation-test the trim**
 
 Change `body.trim()` to `body` and re-run.
 
 Expected: **"rejects whitespace-only text" and "measures the length after trimming" both fail.** Restore the trim.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/domain/comments/
@@ -661,7 +661,7 @@ EOF
 
 Spec §9.2 asks for optimistic UI with rollback. Rollback comes free from React Router — when the fetcher settles, the loader revalidates and the server's answer wins. What does not come free is *what to draw while it is in flight*, and that is arithmetic worth testing without a browser.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `app/domain/signals/vote-state.test.ts`:
 
@@ -789,7 +789,7 @@ describe("applyPendingShootAgain", () => {
 
 Note the two different "nothing pending" values: `null` is a real answer for shoot-again (it means *retract*), so "nothing in flight" has to be `undefined` there. The upvote type has no such collision.
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 ```bash
 npm run test:unit -- vote-state
@@ -797,7 +797,7 @@ npm run test:unit -- vote-state
 
 Expected: FAIL — `Failed to resolve import "./vote-state"`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `app/domain/signals/vote-state.ts`:
 
@@ -886,7 +886,7 @@ export function applyPendingShootAgain(
 }
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 ```bash
 npm run test:unit -- vote-state
@@ -894,7 +894,7 @@ npm run test:unit -- vote-state
 
 Expected: 14 passing.
 
-- [ ] **Step 5: Mutation-test the rules that matter**
+- [x] **Step 5: Mutation-test the rules that matter**
 
 Run each of these, confirm the named test(s) fail, then restore:
 
@@ -913,7 +913,7 @@ Run each of these, confirm the named test(s) fail, then restore:
 
 If any of them stays green, the test is not testing what it says. The `{ ...row }` row above is a real example of that happening: it survived on the first pass, which is why "returns fresh row objects, not aliases into the input" is in the Step 1 test block at all — the copies were correct all along, but nothing proved it until this test existed.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/domain/signals/
@@ -941,7 +941,7 @@ EOF
 - Create: `app/data/signals.ts`
 - Test: `tests/db/signals-data.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/db/signals-data.test.ts`:
 
@@ -1199,7 +1199,7 @@ describe("error propagation", () => {
 });
 ```
 
-- [ ] **Step 2: Run the test and watch it fail**
+- [x] **Step 2: Run the test and watch it fail**
 
 ```bash
 npm run test:db -- signals-data
@@ -1207,7 +1207,7 @@ npm run test:db -- signals-data
 
 Expected: FAIL — `Failed to resolve import "../../app/data/signals"`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `app/data/signals.ts`:
 
@@ -1350,7 +1350,7 @@ export async function retractSignal(
 }
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 ```bash
 npm run test:db -- signals-data
@@ -1358,7 +1358,7 @@ npm run test:db -- signals-data
 
 Expected: 15 passing. If "retracts a shoot-again answer" fails, the `.is` vs `.eq` distinction in `retractSignal` is the cause — that is the trap the comment names.
 
-- [ ] **Step 5: Mutation-test the duplicate rule and the null filter**
+- [x] **Step 5: Mutation-test the duplicate rule and the null filter**
 
 Run each against the committed file, confirming the mutation is genuinely installed before running the suite — a pattern that fails to match leaves the code unchanged and the suite green, which looks like a passing mutation test but is its opposite.
 
@@ -1382,7 +1382,7 @@ The two survivors are the honest result and both are worth knowing rather than p
 
 The spot-filter row is the one that matters most and is easy to miss: with a single-spot fixture it also survives, and the bug it hides is a user taking back one upvote and silently losing the same vote on every other spot. The fixture therefore builds **two** spots.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/data/signals.ts tests/db/signals-data.test.ts
@@ -1448,7 +1448,7 @@ Both are narrow, and the second fails loudly as a `23514` rather than storing an
 worth further complexity, but both are written down — claiming parity without checking is the exact
 mistake this migration exists to correct.
 
-- [ ] **Step 1: Verify the embedded-author shape against the running database**
+- [x] **Step 1: Verify the embedded-author shape against the running database**
 
 The list query embeds the author through the `comments.profile_id → profiles.id` foreign key. PostgREST returns a to-one embed as an object, but supabase-js has typed it as an array in some versions, and this mapping has to match reality rather than documentation.
 
@@ -1462,7 +1462,7 @@ Expected: `[]` or a row whose `profiles` field is an **object**, not an array. A
 `{"id":"…","body":"embed shape probe","profile_id":null,"profiles":null}`. An empty
 `[]` proves nothing about the shape, so insert a probe row rather than accepting it.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Create `tests/db/comments-data.test.ts`:
 
@@ -1670,7 +1670,7 @@ describe("comment constraints", () => {
 });
 ```
 
-- [ ] **Step 3: Run the test and watch it fail**
+- [x] **Step 3: Run the test and watch it fail**
 
 ```bash
 npm run test:db -- comments-data
@@ -1678,7 +1678,7 @@ npm run test:db -- comments-data
 
 Expected: FAIL — `Failed to resolve import "../../app/data/comments"`.
 
-- [ ] **Step 4: Write the implementation**
+- [x] **Step 4: Write the implementation**
 
 Create `app/data/comments.ts`:
 
@@ -1763,7 +1763,7 @@ export async function addComment(
 }
 ```
 
-- [ ] **Step 5: Run the test**
+- [x] **Step 5: Run the test**
 
 ```bash
 npm run test:db -- comments-data
@@ -1771,7 +1771,7 @@ npm run test:db -- comments-data
 
 Expected: 14 passing. If the author name comes back `null` on the first test, the embed is an array in this version of supabase-js — change `row.profiles?.display_name` to read the first element and update `CommentRow` to match what step 1 actually showed.
 
-- [ ] **Step 6: Mutation-test the query filters and both constraints**
+- [x] **Step 6: Mutation-test the query filters and both constraints**
 
 | Mutation | Test that must go red |
 | --- | --- |
@@ -1789,7 +1789,7 @@ Expected: 14 passing. If the author name comes back `null` on the first test, th
 
 The SQL mutations can be applied directly to the live constraint with `alter table … drop constraint … / add constraint …` rather than a full `supabase db reset` per mutation, then restored from the migration. Verify the restored definitions with `pg_get_constraintdef` afterwards rather than assuming.
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add app/data/comments.ts tests/db/comments-data.test.ts
@@ -1820,7 +1820,7 @@ EOF
 
 Spec §7 puts the weights in TypeScript and the counters in Postgres, which leaves someone to multiply them together after a write. `authenticated` has no UPDATE privilege on `spots.score` — deliberately, since score drives the default sort order and a writable column would be rank manipulation. So the route action does it with a service-role client, exactly as `scripts/backfill-scores.ts` already does.
 
-- [ ] **Step 1: Write the failing database test**
+- [x] **Step 1: Write the failing database test**
 
 Create `tests/db/score-refresh.test.ts`:
 
@@ -1981,7 +1981,7 @@ describe("refreshSpotScore", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```bash
 npm run test:db -- score-refresh
@@ -1989,7 +1989,7 @@ npm run test:db -- score-refresh
 
 Expected: FAIL — `Failed to resolve import "../../app/data/scores"`.
 
-- [ ] **Step 3: Write `app/data/scores.ts`**
+- [x] **Step 3: Write `app/data/scores.ts`**
 
 Create `app/data/scores.ts`:
 
@@ -2064,7 +2064,7 @@ export async function refreshSpotScore(
 }
 ```
 
-- [ ] **Step 4: Point the backfill script at the shared mapping**
+- [x] **Step 4: Point the backfill script at the shared mapping**
 
 In `scripts/backfill-scores.ts`, delete the local `CounterRow` interface and `toCounters` (lines 7–24) and the now-unused `SpotCounters` import, then use the shared ones:
 
@@ -2089,7 +2089,7 @@ and replace the `.select(...)` argument with `COUNTER_COLUMNS`:
 
 The rest of the file is unchanged. Two copies of this mapping is exactly how the backfill and the request path would come to disagree about what a counter means.
 
-- [ ] **Step 5: Run the score and backfill tests together**
+- [x] **Step 5: Run the score and backfill tests together**
 
 ```bash
 npm run test:db -- score-refresh backfill
@@ -2097,7 +2097,7 @@ npm run test:db -- score-refresh backfill
 
 Expected: 9 passing in `score-refresh`, and every existing test in `tests/db/backfill.test.ts` still passing.
 
-- [ ] **Step 5a: Mutation-test the write path**
+- [x] **Step 5a: Mutation-test the write path**
 
 | Mutation | Test that must go red |
 | --- | --- |
@@ -2118,7 +2118,7 @@ Two of these need tests that are easy to leave out, and both survived the first 
 
 The last two rows in the table are also what prove the shared counter mapping is load-bearing: a single change to `toCounters` or `COUNTER_COLUMNS` turns tests red in both the request path and the batch path, which is the drift this refactor exists to make impossible.
 
-- [ ] **Step 6: Add the service-role client, with a unit test**
+- [x] **Step 6: Add the service-role client, with a unit test**
 
 Add to `app/lib/env.server.test.ts`:
 
@@ -2173,7 +2173,7 @@ describe("createSupabaseAdminClient", () => {
 
 The existing `readEnv` test asserts the whole object with `toEqual`, which treats an `undefined` property as equal to a missing one — so it keeps passing once `supabaseServiceRoleKey: undefined` joins the return value. If it goes red, the assertion is `toStrictEqual` and needs the new key spelled out.
 
-- [ ] **Step 7: Run the new unit tests and watch them fail**
+- [x] **Step 7: Run the new unit tests and watch them fail**
 
 ```bash
 npm run test:unit -- env.server supabase.server
@@ -2181,7 +2181,7 @@ npm run test:unit -- env.server supabase.server
 
 Expected: FAIL — `supabaseServiceRoleKey` is not on `Env`, and `createSupabaseAdminClient` is not exported.
 
-- [ ] **Step 8: Implement both**
+- [x] **Step 8: Implement both**
 
 In `app/lib/env.server.ts`, extend the schema and the interface:
 
@@ -2244,7 +2244,7 @@ export function createSupabaseAdminClient(env: Env = readEnv()): SupabaseClient 
 
 Note the existing `import type { SupabaseClient }` line must become a value import of `createClient` alongside it, as shown.
 
-- [ ] **Step 9: Run everything**
+- [x] **Step 9: Run everything**
 
 ```bash
 npm run test:unit && npm run typecheck
@@ -2252,7 +2252,7 @@ npm run test:unit && npm run typecheck
 
 Expected: all unit tests pass and typecheck is clean.
 
-- [ ] **Step 10: Commit**
+- [x] **Step 10: Commit**
 
 ```bash
 git add app/data/scores.ts app/lib/env.server.ts app/lib/env.server.test.ts app/lib/supabase.server.ts app/lib/supabase.server.test.ts scripts/backfill-scores.ts tests/db/score-refresh.test.ts
@@ -2286,7 +2286,7 @@ EOF
 - Create: `app/components/spot/VotePanel.tsx`, `app/components/spot/VotePanel.test.tsx`, `app/components/spot/CommentThread.tsx`, `app/components/spot/CommentThread.test.tsx`
 - Modify: `app/routes/spots.$slug.tsx`
 
-- [ ] **Step 1: Write the failing component tests**
+- [x] **Step 1: Write the failing component tests**
 
 The unit project runs in `node` with no DOM, so components are tested through the pure helpers they export — the same approach as `SpotCard.test.tsx`.
 
@@ -2454,7 +2454,7 @@ describe("commentByline", () => {
 });
 ```
 
-- [ ] **Step 2: Run them and watch them fail**
+- [x] **Step 2: Run them and watch them fail**
 
 ```bash
 npm run test:unit -- VotePanel CommentThread
@@ -2462,7 +2462,7 @@ npm run test:unit -- VotePanel CommentThread
 
 Expected: FAIL — neither module exists.
 
-- [ ] **Step 3: Write `VotePanel.tsx`**
+- [x] **Step 3: Write `VotePanel.tsx`**
 
 Create `app/components/spot/VotePanel.tsx`:
 
@@ -2621,7 +2621,7 @@ export function VotePanel({
 }
 ```
 
-- [ ] **Step 4: Write `CommentThread.tsx`**
+- [x] **Step 4: Write `CommentThread.tsx`**
 
 Create `app/components/spot/CommentThread.tsx`:
 
@@ -2687,7 +2687,7 @@ export function CommentThread({
 }
 ```
 
-- [ ] **Step 5: Run the component tests**
+- [x] **Step 5: Run the component tests**
 
 ```bash
 npm run test:unit -- VotePanel CommentThread
@@ -2695,7 +2695,7 @@ npm run test:unit -- VotePanel CommentThread
 
 Expected: 20 passing.
 
-- [ ] **Step 6: Wire the route**
+- [x] **Step 6: Wire the route**
 
 In `app/routes/spots.$slug.tsx`, replace the import block, the loader, and the page body. Add to the imports:
 
@@ -2843,13 +2843,13 @@ Update the destructuring at the top of the component:
 
 The totals line above stays — it is the lifetime summary and the panel is the breakdown — but it moves behind `voteTotalsLine`, exported from `VotePanel.tsx` with its own tests. It was written when every count was necessarily zero, so nothing ever read "1 upvotes" until voting existed; this task is what surfaces it.
 
-- [ ] **Step 6a: Style the two new sections**
+- [x] **Step 6a: Style the two new sections**
 
 The plan originally shipped no CSS, which leaves both components rendering as unstyled text — the buttons lose their chrome entirely against the app's reset. `app/app.css` already establishes the conventions to follow: `.explore__controls button` is a pill whose selected state keys off `aria-pressed` (so the visual state and the accessibility state cannot disagree), `.submit__form button[type="submit"]` is the solid primary, and `[role="alert"]` is `#b42318`. Reuse all three rather than inventing a parallel set, and delete the now-dead `.spot-detail__pending` rule.
 
 Give `.vote-panel__count` `font-variant-numeric: tabular-nums`, so a count going 9 → 10 does not shift the button sideways.
 
-- [ ] **Step 7: Typecheck and run everything**
+- [x] **Step 7: Typecheck and run everything**
 
 ```bash
 npm run typecheck && npm test
@@ -2857,7 +2857,7 @@ npm run typecheck && npm test
 
 Expected: clean typecheck; all previous tests plus the new ones passing.
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add app/components/spot/ app/routes/spots.\$slug.tsx
@@ -2888,7 +2888,7 @@ Nothing above proves a human can vote. The two silent auth bugs this project has
 - Modify: `docs/STATUS.md`, `README.md`, `docs/superpowers/plans/2026-08-10-photospots-signals.md`
 - Possibly modify: `docs/ENGINEERING-NOTES.md`
 
-- [ ] **Step 1: Confirm the whole suite and the build**
+- [x] **Step 1: Confirm the whole suite and the build**
 
 ```bash
 npm test && npm run typecheck && npm run build
@@ -2896,7 +2896,7 @@ npm test && npm run typecheck && npm run build
 
 Expected: all three clean. Record the test count.
 
-- [ ] **Step 2: Drive the real application**
+- [x] **Step 2: Drive the real application**
 
 Start the dev server through the preview tooling (never `npm run dev` in a bash call), then:
 
@@ -2908,7 +2908,7 @@ Start the dev server through the preview tooling (never `npm run dev` in a bash 
 6. Post a comment. Confirm it appears with your display name and today's date.
 7. Check the browser console and the server log for errors.
 
-- [ ] **Step 3: Confirm the score actually moved**
+- [x] **Step 3: Confirm the score actually moved**
 
 Immediately after step 2's voting, with the spot slug you used:
 
@@ -2918,7 +2918,7 @@ set -a && . ./.env && set +a && curl -s "$SUPABASE_URL/rest/v1/spots?slug=eq.fis
 
 Expected: `score` equals `computeScore` over those counters with `DEFAULT_WEIGHTS` — upvotes ×1.0 + shoot-again yes ×2.0 + shoot-again no ×−1.5 + comments ×0.5 + scouting photos ×1.0 + session photos ×1.5. Do the arithmetic and check it. A score of 0 next to non-zero counters means the refresh silently failed; the server log will say why.
 
-- [ ] **Step 4: Confirm the ranking is consistent**
+- [x] **Step 4: Confirm the ranking is consistent**
 
 ```bash
 npm run backfill:scores
@@ -2926,7 +2926,7 @@ npm run backfill:scores
 
 Then re-run the query from step 3. Expected: **`score` is unchanged.** The backfill and the request path both route through `computeScore` over the same counter mapping, so a difference here means they have drifted — which is precisely what task 6's shared `toCounters` exists to prevent.
 
-- [ ] **Step 5: Update `docs/STATUS.md`**
+- [x] **Step 5: Update `docs/STATUS.md`**
 
 - Move milestone 4 to ✅ with a link to this plan; mark 5 as Next.
 - Update the test count and the date in the header.
@@ -2935,19 +2935,19 @@ Then re-run the query from step 3. Expected: **`score` is unchanged.** The backf
 - Add to "Known gaps, deliberately deferred": **the score refresh is read-then-write, so two simultaneous votes can leave `score` one vote behind until the next backfill.** Note that the counters are never wrong, only the derived number.
 - Note that voting and commenting need `SUPABASE_SERVICE_ROLE_KEY` in the app environment, not just for scripts.
 
-- [ ] **Step 6: Update `README.md`**
+- [x] **Step 6: Update `README.md`**
 
 Extend the feature list with voting and comments, in the same voice as the existing entries.
 
-- [ ] **Step 7: Sync this plan with what was actually built**
+- [x] **Step 7: Sync this plan with what was actually built**
 
 Tick every checkbox. Where the implementation deviated from the plan, edit the plan text to match the code and say so in the commit message. Several bugs in this project were caught precisely by comparing plan against code, which only works if the plan is kept honest.
 
-- [ ] **Step 8: Add any new trap to `docs/ENGINEERING-NOTES.md`**
+- [x] **Step 8: Add any new trap to `docs/ENGINEERING-NOTES.md`**
 
 Only if this plan hit a real one. Candidates that would qualify: the `.is` vs `.eq` null-filter distinction in PostgREST, or the shape of an embedded to-one resource. Do not add anything that was merely anticipated — every entry in that file is a bug that shipped or nearly shipped, and diluting it with hypotheticals is how it stops being read.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add docs/ README.md
@@ -2963,6 +2963,30 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 EOF
 )"
 ```
+
+---
+
+## What diverged from the plan as written
+
+Every code block above was re-synced to the file that was actually committed, so the plan and the
+implementation agree. The changes worth naming, because each came from a defect the plan itself
+contained:
+
+| Where | What the plan said | What was built, and why |
+| --- | --- | --- |
+| Task 1 | Ordering test asserting the returned `sort_order` values are non-decreasing | A probe shoot type whose id, `sort_order` and label all disagree. The original survived `order by t.id`, `order by t.label` and deleting the `ORDER BY` outright, and could not be fixed by rewriting the assertion — the seed sets `sort_order = id * 10`. |
+| Task 1 | No spot-visibility filter on `spot_signal_summary` | An explicit `status = 'published'` guard, parenthesised against the union. Both sibling RPCs filter it and this one was the odd one out. Not a data leak — `signals_read` and `spot_shoot_types_read` are `using (true)`, so the rows were already reachable — but house-rule consistency and defence in depth. |
+| Task 2 | `validateComment` "mirrors" the database check | It does not: Postgres `trim()` strips spaces only, so the database accepted `"\n\t"`. The comment was corrected, and migration 10 was added to Task 5 to close the hole. |
+| Task 3 | "never shows a negative count" asserting the state comes back unchanged | Unsatisfiable alongside "takes the vote back on a retraction" for any implementation that does not branch on the counters being zero. Corrected to assert the counts clamp while `viewerAnswer` still transitions. |
+| Task 4 | Single-spot fixture | Two spots. Dropping `.eq("spot_id", …)` from `retractSignal` passed the single-spot suite, and the bug it hides is a user losing that vote on every spot at once. |
+| Task 5 | Moderation test listing as an anonymous viewer | Also lists **as the author**. RLS hides removed rows from `anon` either way, so the original could not tell whether the query filter did anything. |
+| Task 6 | Five tests | Nine. Nothing forced a write failure, so `refreshSpotScore` is now also handed the voter's client — the read succeeds and only the write is refused, which is the mistake the route could make with both clients in scope. |
+| Task 7 | No CSS | Both sections had no rules at all and rendered as bare text. They now reuse `app.css`'s existing conventions. The totals line also moved behind a tested `voteTotalsLine`, because voting is what made "1 upvotes" reachable. |
+
+Two mutations survive deliberately and are documented in the code rather than papered over:
+`castSignal`'s duplicate swallow, which `cast_signal` makes unreachable by deleting before it
+inserts, and `retractSignal`'s `kind` filter, which `signals_shape` makes redundant until a second
+signal kind carries a shoot type.
 
 ---
 

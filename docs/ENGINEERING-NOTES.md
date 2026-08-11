@@ -72,6 +72,25 @@ anonymous author. Votes `cascade`, because a ballot is not content others read.
 `signals.profile_id` **must** cascade, not set null: two anonymised rows would land on the same
 `(spot_id, kind, shoot_type_id)` key, which the `NULLS NOT DISTINCT` constraint then rejects.
 
+### Postgres `trim()` strips spaces only
+
+`trim(x)` is `btrim(x, ' ')`. It is **not** the equivalent of JavaScript's `.trim()`, which strips
+all Unicode whitespace. So `check (length(trim(body)) > 0)` accepts a body of `E'\n\t'`.
+
+> **How it surfaced:** `comments` carried that check from milestone 1. Since `comments_insert`
+> requires only `profile_id = auth.uid()`, any signed-in user could POST a newline straight to
+> PostgREST: a blank comment that rendered, bumped `comment_count`, and was worth `weights.comment`
+> in `computeScore`. Repeatable in a loop. Migration 10 replaced it with `body ~ '[^[:space:]]'`.
+
+Two things worth knowing before writing the replacement:
+
+- POSIX `[:space:]` **does** include U+00A0 here, contrary to the usual claim. Measure rather than
+  assume — the two definitions still differ on U+FEFF and U+0085, in opposite directions.
+- A limit that only the application enforces is not a limit. `MAX_PHOTOS_PER_KIND` is duplicated
+  into `enforce_photo_cap()` precisely so the cap holds for anything reaching the table, and
+  `comments.body` now carries a hard ceiling for the same reason. Keep the tunable product number
+  in TypeScript and the abuse ceiling in the schema; they are two numbers with two jobs.
+
 ### `UNIQUE NULLS NOT DISTINCT` is required, not stylistic
 
 Postgres treats NULLs as distinct in unique constraints by default. `signals` allows one vote per
@@ -200,5 +219,21 @@ Several suites passed against deliberately wrong implementations:
   curve agree — `floor`, `ceil`, `round` step decay **and** linear interpolation all passed.
 - The rounding test used a value where `round`, `floor` and `trunc` agree.
 - `boundsContain`'s inclusive comparisons and the grid divisor had no test at all.
+- The `spot_signal_summary` ordering test survived `order by t.id`, `order by t.label`, **and
+  deleting the `ORDER BY` entirely** — it only caught a full reversal. It was also unfixable by
+  rewriting the assertion, because the seed sets `sort_order = id * 10`, so the two orderings are
+  perfectly correlated. It took a probe row whose id, `sort_order` and label all disagree.
+- Dropping `.eq("spot_id", …)` from `retractSignal` passed every test, because the fixture had only
+  one spot. The bug that hides: taking back one upvote silently removes that vote from every other
+  spot the user upvoted for the same shoot type.
 
-If a test guards a specific behavior, break that behavior and confirm the test goes red.
+**A filter the database would enforce anyway needs a viewer who can see past it.** Testing
+`listComments`' explicit `status = 'published'` against an anonymous viewer proves nothing — RLS
+hides removed rows from `anon` either way, so the mutation survives. `comments_read` deliberately
+lets authors see their own removed comments, so only listing *as the author* makes the query filter
+load-bearing. That is also the case that matters in the product: the page lists with the viewer's
+own client, so without the filter an author sees their removed comment still sitting in the thread.
+
+If a test guards a specific behavior, break that behavior and confirm the test goes red — and check
+the mutation was actually installed before you believe a green suite, since a pattern that fails to
+match leaves the code unchanged and looks exactly like a passing mutation test.

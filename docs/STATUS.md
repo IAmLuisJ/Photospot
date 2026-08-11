@@ -1,7 +1,7 @@
 # Project status
 
 **Last updated:** 2026-08-10 · **Branch:** `foundation`, tracking `origin/main` ·
-**Tests:** 240 passing across 29 files
+**Tests:** 333 passing across 37 files
 
 Photospots is a map of photography locations, cultivated by local photographers. Design lives in
 [`superpowers/specs/2026-08-09-photospots-design.md`](superpowers/specs/2026-08-09-photospots-design.md).
@@ -18,28 +18,32 @@ bug this project already hit.
 | 1 · Foundation | [`foundation`](superpowers/plans/2026-08-09-photospots-foundation.md) | ✅ Schema, RLS, auth, pure domain layer |
 | 2 · Explore | [`explore`](superpowers/plans/2026-08-10-photospots-explore.md) | ✅ Viewport map, filters, three views, detail page |
 | 3 · Contribution | [`contribution`](superpowers/plans/2026-08-10-photospots-contribution.md) | ✅ Submission, duplicate check, photo upload, editing |
-| 4 · Voting & comments | not written | ⬜ Next |
-| 5 · Filters & views polish | not written | ⬜ |
+| 4 · Voting & comments | [`signals`](superpowers/plans/2026-08-10-photospots-signals.md) | ✅ Per-shoot-type upvotes, shoot-again, comments, score wiring |
+| 5 · Filters & views polish | not written | ⬜ Next |
 | 6 · Trust & moderation | not written | ⬜ |
 
 Concretely, you can: browse a map of seeded Grand Rapids spots, filter by shoot type, switch between
 split/map/gallery views, open a spot page, sign in with a magic link, submit a new spot with photos
-after a duplicate check, and edit what you submitted.
+after a duplicate check, edit what you submitted, upvote a spot for a particular kind of shoot,
+answer "would you shoot here again?" (and change or clear that answer), and leave a comment. Vote
+and comment counts are visible to logged-out visitors; casting either requires an account.
 
 ### Database
 
-Eight migrations. Functions: `spots_in_viewport`, `spot_by_slug`, `spots_within_meters`,
-`create_spot`, `cast_signal`, `claim_studio`, `slug_exists`, `recount_spot`, `is_admin`,
-`enforce_photo_cap`, plus trigger functions.
+Ten migrations. Functions: `spots_in_viewport`, `spot_by_slug`, `spot_signal_summary`,
+`spots_within_meters`, `create_spot`, `cast_signal`, `claim_studio`, `slug_exists`, `recount_spot`,
+`is_admin`, `enforce_photo_cap`, plus trigger functions.
 
 ### Application
 
 ```
 app/domain/    pure, no I/O — scoring (score, hot, weights, signal-weight),
-               geo (bounds, distance), filters, spots (slug, submission)
-app/data/      profiles, spots (read), spot-writes
+               geo (bounds, distance), filters, spots (slug, submission),
+               signals (vote-state), comments (comment)
+app/data/      profiles, spots (read), spot-writes, signals, comments, scores
 app/lib/       env.server, supabase.server, photo-url, photo-upload.client
-app/components/ map/SpotMap, explore/SpotCard, explore/ExploreLayout
+app/components/ map/SpotMap, explore/SpotCard, explore/ExploreLayout,
+               spot/VotePanel, spot/CommentThread
 app/routes/    home (explore), submit, spots.$slug, spots.$slug.edit, auth.*
 scripts/       seed-grand-rapids, backfill-scores, refresh-hot-scores
 ```
@@ -97,27 +101,46 @@ Vercel is already linked (project `photospots`, org `iamluisjs-projects`, GitHub
 
 ---
 
-## Next: plan 4 — voting and comments
+## Next: plan 5 — filters and remaining views
 
-Milestone 4 in spec §13. Most of the hard part is already built and tested:
+Milestone 5 in spec §13. Partly built already:
 
-- **`cast_signal(p_spot_id, p_kind, p_shoot_type_id, p_value)`** exists, is granted to
-  `authenticated`, and changes a vote atomically. Spec §9.2 requires this: a client-side
-  delete-then-insert is two round trips with no transaction, and a failed second step silently
-  discards the vote the optimistic UI already redrew.
-- **Counters** are maintained by statement-level triggers; `spots.score` is written by the command
-  layer via `computeScore`.
-- **Comments** table, RLS policies and grants exist. Authors cannot un-remove admin-moderated
-  content — `status` is admin-only in both grants and policies.
+- **`parseExploreFilters` already handles `type`, `sort` and `view`** and round-trips them through
+  the URL, so filter state is shareable today.
+- **The viewport RPC already takes `p_shoot_type_id` and `p_sort`**, so shoot-type filtering and the
+  score/hot sort orders work end to end.
 
-What plan 4 needs to add: vote and comment UI on the spot detail page, a comments data layer,
-optimistic UI with rollback (treating a duplicate-vote `23505` as success, per spec §9.2), and
-wiring `spots.score` to update when a signal changes.
+What plan 5 needs to add: the attribute filters (cost, terrain, accessibility, walk time, dog
+friendly — all real nullable columns, indexable, per spec §4.7), the map-dominant and gallery
+arrangements behind `?view=`, and the mobile collapse to a full-screen map with a draggable results
+sheet. The three views share one loader and one URL filter state by design (spec §8).
 
----
+Worth folding in: **`signals.profile_id` is readable by `anon`**, so anyone can enumerate which
+profile voted on which spot. `signals_read` is `using (true)` and vote *counts* are meant to be
+public, but the per-person ballot is not. Found while reviewing plan 4; it belongs to milestone 6
+(trust and moderation) unless it is wanted sooner.
 
 ## Known gaps, deliberately deferred
 
+- **`spots.score` can go one vote stale under concurrency.** The refresh is read-then-write, so two
+  votes landing together can both read the same counters and write the same score. The counters are
+  never wrong — the recount trigger is statement-level and runs inside the vote's own transaction —
+  so this is a stale derived number, not lost data, and `npm run backfill:scores` repairs it. Making
+  it atomic would mean doing the arithmetic in SQL, a second copy of the weights in a second
+  language, which is the drift spec §7 exists to prevent.
+- **Voting and commenting need `SUPABASE_SERVICE_ROLE_KEY` in the app environment**, not just for
+  scripts, because `spots.score` is deliberately not writable by `authenticated`. It is optional in
+  `readEnv` so its absence cannot take down the whole site, and `createSupabaseAdminClient` throws
+  at the point it is actually needed. A vote still succeeds if the refresh fails; the error is
+  logged with the repair command rather than shown to the user, since the vote did land.
+- **Comment bylines show the UTC date.** A comment posted at 8pm Eastern reads as the next day. The
+  format is deliberately not locale-formatted, because that renders differently for the reader than
+  for the test — but the honest fix is the viewer's own timezone, which SSR cannot know and so needs
+  client-side work. One line to change once a date policy is chosen.
+- **`comments.body` has no length limit a user would notice.** The schema ceiling is 10000
+  characters as an abuse guard; the 2000-character product limit lives in TypeScript, so a direct
+  API call can store a comment four times longer than the form allows. Deliberate — the two numbers
+  have different jobs — but worth knowing before someone reports a very long comment.
 - **Orphaned storage objects are never swept.** Photos upload before the spot exists (spec §10), so
   an abandoned submission leaves files behind. Spec calls for a periodic sweep; needs a scheduled
   job like `refresh:hot`.

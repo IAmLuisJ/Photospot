@@ -1204,9 +1204,18 @@ describe("parseAttributeFilters", () => {
     expect(parse("").dogFriendlyOnly).toBe(false);
   });
 
+  // Only "1" means on. Someone hand-editing a shared link to `dogs=0`
+  // expecting to switch it off must not switch it on instead.
+  it("treats any dogs value other than 1 as off", () => {
+    expect(parse("dogs=0").dogFriendlyOnly).toBe(false);
+    expect(parse("dogs=").dogFriendlyOnly).toBe(false);
+    expect(parse("dogs=true").dogFriendlyOnly).toBe(false);
+  });
+
   // Search params arrive from other people's links and from hand editing, so
-  // every field falls back rather than throwing — a bad URL shows an unfiltered
-  // map, not an error page.
+  // every field falls back rather than throwing — a bad URL shows an
+  // unfiltered map, not an error page. Dropping also matters for correctness:
+  // querying for a value no row can hold looks identical to "no results".
   it("drops values outside the vocabulary instead of querying for them", () => {
     expect(parse("access=wheelchair,teleporter").accessibility).toEqual(["wheelchair"]);
     expect(parse("cost=free,gold_bars").costTypes).toEqual(["free"]);
@@ -1216,6 +1225,11 @@ describe("parseAttributeFilters", () => {
     expect(parse("walk=soon").maxWalkMinutes).toBeNull();
     expect(parse("walk=-5").maxWalkMinutes).toBeNull();
     expect(parse("walk=1.5").maxWalkMinutes).toBeNull();
+  });
+
+  // Zero is a real filter — you park at the spot — and must survive parsing.
+  it("keeps a zero walk time", () => {
+    expect(parse("walk=0").maxWalkMinutes).toBe(0);
   });
 
   it("ignores empty entries rather than filtering on the empty string", () => {
@@ -1244,6 +1258,12 @@ describe("attributeFiltersToParams", () => {
     expect(parseAttributeFilters(attributeFiltersToParams(f))).toEqual(f);
   });
 
+  // Zero would be dropped by a truthiness check on the way out, too.
+  it("round-trips a zero walk time", () => {
+    const f = filters({ maxWalkMinutes: 0 });
+    expect(parseAttributeFilters(attributeFiltersToParams(f))).toEqual(f);
+  });
+
   it("omits the dogs flag when it is off, so a share link stays short", () => {
     expect(attributeFiltersToParams(filters({ dogFriendlyOnly: false })).has("dogs")).toBe(false);
   });
@@ -1263,8 +1283,7 @@ describe("hasAnyAttributeFilter", () => {
     expect(hasAnyAttributeFilter({ ...NO_ATTRIBUTE_FILTERS, dogFriendlyOnly: true })).toBe(true);
   });
 
-  // Zero is a real filter — "you can park at the spot" — and would be dropped
-  // by a truthiness check.
+  // Zero is a real filter and would be dropped by a truthiness check.
   it("treats a zero-minute walk as a filter", () => {
     expect(hasAnyAttributeFilter({ ...NO_ATTRIBUTE_FILTERS, maxWalkMinutes: 0 })).toBe(true);
   });
@@ -1284,10 +1303,7 @@ Expected: FAIL — `Failed to resolve import "./attribute-filters"`.
 Create `app/domain/filters/attribute-filters.ts`:
 
 ```ts
-import {
-  COST_TYPE_OPTIONS,
-  isAccessibilityValue,
-} from "../spots/attributes";
+import { COST_TYPE_OPTIONS, isAccessibilityValue } from "../spots/attributes";
 
 export interface AttributeFilters {
   /** Any-of. Empty means no cost filter. */
@@ -1315,15 +1331,20 @@ const list = (params: URLSearchParams, key: string, isValid: (v: string) => bool
   return raw
     .split(",")
     .map((v) => v.trim())
+    // `v !== ""` is redundant against today's validators — both reject the
+    // empty string already, and a mutation test confirms no case reaches it.
+    // It stays for the next filter field, whose validator may be permissive.
     .filter((v) => v !== "" && isValid(v));
 };
 
 /**
  * Search params arrive from other people's links and from hand editing, so a
  * bad value is dropped rather than thrown on — a broken URL should show an
- * unfiltered map, not an error page. Dropping also matters for correctness:
- * passing an unknown string through to the query would filter on something no
- * row can match, which looks identical to "no results" and is not.
+ * unfiltered map, not an error page.
+ *
+ * Dropping also matters for correctness, not just resilience: passing an
+ * unknown string through to the query would filter on something no row can
+ * match, which renders identically to "no results" and is not the same thing.
  */
 export function parseAttributeFilters(params: URLSearchParams): AttributeFilters {
   const walkRaw = params.get("walk");
@@ -1340,6 +1361,7 @@ export function parseAttributeFilters(params: URLSearchParams): AttributeFilters
 export function attributeFiltersToParams(filters: AttributeFilters): URLSearchParams {
   const params = new URLSearchParams();
   if (filters.costTypes.length > 0) params.set("cost", filters.costTypes.join(","));
+  // `!== null`, not truthiness: zero is a real filter and would vanish.
   if (filters.maxWalkMinutes !== null) params.set("walk", String(filters.maxWalkMinutes));
   if (filters.accessibility.length > 0) params.set("access", filters.accessibility.join(","));
   if (filters.dogFriendlyOnly) params.set("dogs", "1");
@@ -1367,7 +1389,7 @@ export function hasAnyAttributeFilter(filters: AttributeFilters): boolean {
 npm run test:unit -- attribute-filters
 ```
 
-Expected: 15 passing.
+Expected: 17 passing.
 
 - [ ] **Step 5: Mutation-test**
 
@@ -1375,7 +1397,8 @@ Expected: 15 passing.
 | --- | --- |
 | `filters.maxWalkMinutes !== null` → `filters.maxWalkMinutes` in `hasAnyAttributeFilter` | "treats a zero-minute walk as a filter" |
 | Drop the `isValid` filter in `list` | "drops values outside the vocabulary instead of querying for them" |
-| Drop the `v !== ""` filter in `list` | "ignores empty entries rather than filtering on the empty string" |
+| Drop the `v !== ""` filter in `list` | **nothing — survives.** Both validators already reject the empty string, so the guard is inert today. It stays for the next filter field, whose validator may be permissive, and the code says so. |
+| `params.get("dogs") === "1"` → `!== null` | "treats any dogs value other than 1 as off" — worth having: without it, hand-editing a shared link to `dogs=0` turns the filter *on* |
 | `Number.isInteger(walk) && walk >= 0` → `!Number.isNaN(walk)` | "ignores a walk time that is not a non-negative integer" |
 | Remove one clause from `hasAnyAttributeFilter`'s `||` chain | "is true for any single filter" |
 

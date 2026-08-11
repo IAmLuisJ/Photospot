@@ -295,6 +295,7 @@ import { serviceClient, anonClient, createTestUser, deleteTestUser, type TestUse
 let boss: TestUser;
 let author: TestUser;
 let spotId: string;
+let spotSlug: string;
 let commentId: string;
 let spotReportId: string;
 let commentReportId: string;
@@ -312,12 +313,13 @@ beforeAll(async () => {
   author = await createTestUser("Reported Author");
   await promote(boss.id);
 
+  spotSlug = `moderation-${crypto.randomUUID().slice(0, 8)}`;
   const { data: spot, error } = await admin()
     .from("spots")
     .insert({
       kind: "outdoor",
       name: "Moderation Target",
-      slug: `moderation-${crypto.randomUUID().slice(0, 8)}`,
+      slug: spotSlug,
       location: "POINT(-85.68 42.95)",
       created_by: author.id,
       status: "published",
@@ -349,7 +351,8 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await admin().from("reports").delete().in("id", [spotReportId, commentReportId]);
+  await admin().from("reports").delete().eq("target_id", spotId);
+  await admin().from("reports").delete().eq("target_id", commentId);
   const { error } = await admin().from("spots").delete().eq("id", spotId);
   if (error) throw error;
   await deleteTestUser(boss.id);
@@ -366,6 +369,17 @@ const reportRow = async (id: string) => {
   return data!;
 };
 
+/** A throwaway open report on the spot, for tests that need to consume one. */
+const spareReport = async (targetType: "spot" | "comment", targetId: string) => {
+  const { data } = await admin()
+    .from("reports")
+    .insert({ target_type: targetType, target_id: targetId, profile_id: author.id, reason: "spam" })
+    .select("id")
+    .single();
+  return data!.id as string;
+};
+
+// These run in order and share state: the spot is hidden partway through.
 describe("resolve_report", () => {
   it("refuses a caller who is not an admin", async () => {
     const { error } = await author.client.rpc("resolve_report", {
@@ -420,56 +434,51 @@ describe("resolve_report", () => {
   // spots.status is spot_status; comments.status is content_status, which has
   // no 'hidden'. Asking for one must fail loudly rather than storing something
   // adjacent.
-  it("refuses to hide a comment, which its status column cannot express", async () => {
-    const { data: extra } = await admin()
-      .from("reports")
-      .insert({ target_type: "comment", target_id: commentId, profile_id: author.id, reason: "spam" })
-      .select("id")
-      .single();
+  // The guard is about the message, not the outcome: without it,
+  // `'hidden'::content_status` raises 22P02 and the report is left open just
+  // the same. Asserting only "something threw" therefore passes with the guard
+  // removed — so this asserts the sentence an admin would actually read.
+  it("refuses to hide a comment, and says why rather than naming an enum", async () => {
+    const id = await spareReport("comment", commentId);
+    const { error } = await boss.client.rpc("resolve_report", { p_report_id: id, p_action: "hide" });
 
-    const { error } = await boss.client.rpc("resolve_report", {
-      p_report_id: extra!.id,
-      p_action: "hide",
-    });
-    expect(error).not.toBeNull();
-
-    await admin().from("reports").delete().eq("id", extra!.id);
+    expect(error?.message).toMatch(/only a spot can be hidden/i);
+    expect(error?.message).not.toMatch(/invalid input value/i);
+    expect((await reportRow(id)).status).toBe("open");
   });
 
   it("dismisses without touching the target", async () => {
-    const { data: extra } = await admin()
-      .from("reports")
-      .insert({ target_type: "spot", target_id: spotId, profile_id: author.id, reason: "spam" })
-      .select("id")
-      .single();
-
+    const id = await spareReport("spot", spotId);
     const before = await statusOf("spots", spotId);
+
     const { error } = await boss.client.rpc("resolve_report", {
-      p_report_id: extra!.id,
+      p_report_id: id,
       p_action: "dismiss",
     });
     expect(error).toBeNull();
     expect(await statusOf("spots", spotId)).toBe(before);
-    expect((await reportRow(extra!.id)).status).toBe("dismissed");
-
-    await admin().from("reports").delete().eq("id", extra!.id);
+    expect((await reportRow(id)).status).toBe("dismissed");
   });
 
+  // Without the guard, `p_action::spot_status` raises a cast error anyway — so
+  // asserting only that something threw would pass for the wrong reason. The
+  // report still being open is what proves the guard ran first.
   it("rejects an unknown action rather than resolving the report anyway", async () => {
-    const { data: extra } = await admin()
-      .from("reports")
-      .insert({ target_type: "spot", target_id: spotId, profile_id: author.id, reason: "spam" })
-      .select("id")
-      .single();
-
+    const id = await spareReport("spot", spotId);
     const { error } = await boss.client.rpc("resolve_report", {
-      p_report_id: extra!.id,
+      p_report_id: id,
       p_action: "delete_everything",
     });
     expect(error).not.toBeNull();
-    expect((await reportRow(extra!.id)).status).toBe("open");
+    expect((await reportRow(id)).status).toBe("open");
+  });
 
-    await admin().from("reports").delete().eq("id", extra!.id);
+  it("refuses a report id that does not exist", async () => {
+    const { error } = await boss.client.rpc("resolve_report", {
+      p_report_id: "00000000-0000-0000-0000-000000000000",
+      p_action: "dismiss",
+    });
+    expect(error).not.toBeNull();
   });
 
   // Spec §9.4: moderation is not reversible by the author. The definer
@@ -503,7 +512,7 @@ describe("admin_report_queue", () => {
   // status = 'published', so once a spot is hidden an admin can no longer load
   // the thing they are being asked to judge.
   it("shows a hidden spot's title, which no public query returns", async () => {
-    const { data: bySlug } = await boss.client.rpc("spot_by_slug", { p_slug: "moderation-target" });
+    const { data: bySlug } = await boss.client.rpc("spot_by_slug", { p_slug: spotSlug });
     expect(bySlug ?? []).toHaveLength(0);
 
     const { data, error } = await boss.client.rpc("admin_report_queue");
@@ -511,6 +520,7 @@ describe("admin_report_queue", () => {
     const row = (data ?? []).find((r: { target_id: string }) => r.target_id === spotId);
     expect(row).toBeDefined();
     expect(row.target_title).toBe("Moderation Target");
+    expect(row.target_status).toBe("hidden");
   });
 
   it("carries the reason and the target type so the queue can be read at a glance", async () => {
@@ -518,6 +528,15 @@ describe("admin_report_queue", () => {
     const row = (data ?? []).find((r: { target_id: string }) => r.target_id === commentId);
     expect(row?.target_type).toBe("comment");
     expect(typeof row?.reason).toBe("string");
+  });
+
+  it("puts open reports before closed ones", async () => {
+    const { data } = await boss.client.rpc("admin_report_queue");
+    const statuses = (data ?? []).map((r: { status: string }) => r.status === "open");
+    // Every open report comes before every closed one.
+    expect(statuses.indexOf(false) === -1 || !statuses.slice(statuses.indexOf(false)).includes(true)).toBe(
+      true,
+    );
   });
 });
 
@@ -556,7 +575,8 @@ Create `supabase/migrations/20260811000014_moderation.sql`:
 -- be writable by the submitter — but `admin` is a value in profiles.role, not a
 -- Postgres role, and every signed-in user is the same `authenticated` role. So
 -- "grant UPDATE on spots.status to admins" is not expressible, and an admin
--- attempting it gets 42501 permission denied. Verified before writing this.
+-- attempting it gets `42501 permission denied for table spots`. Verified
+-- against the running database before writing this.
 --
 -- The alternative — making status writable and relying on a policy — is the
 -- "policies authorize rows, grants authorize columns" trap in
@@ -580,6 +600,10 @@ as $$
 declare
   v_target_type public.report_target;
   v_target_id uuid;
+  -- The action and the stored status are not the same word: the actions are
+  -- `hide` and `remove`, the enum values are `hidden` and `removed`. Casting
+  -- the action straight to the enum raises 22P02, which is how this was found.
+  v_status text;
 begin
   -- Re-checked here rather than trusted from the caller: this function runs as
   -- its owner and is the only thing standing between `authenticated` and
@@ -588,6 +612,9 @@ begin
     raise exception 'only an admin may resolve a report';
   end if;
 
+  -- Before the cast below, not after. `p_action::public.spot_status` raises on
+  -- a bad value anyway, but by then the target may already have been touched —
+  -- and the error would name a cast rather than the mistake.
   if p_action not in ('hide', 'remove', 'dismiss') then
     raise exception 'unknown resolution action: %', p_action;
   end if;
@@ -611,23 +638,28 @@ begin
   end if;
 
   if p_action <> 'dismiss' then
+    v_status := case p_action when 'hide' then 'hidden' else 'removed' end;
+
     if v_target_type = 'spot' then
       update public.spots
-         set status = p_action::public.spot_status
+         set status = v_status::public.spot_status
        where id = v_target_id;
     elsif v_target_type = 'photo' then
       update public.photos
-         set status = p_action::public.content_status
+         set status = v_status::public.content_status
        where id = v_target_id;
     elsif v_target_type = 'comment' then
       update public.comments
-         set status = p_action::public.content_status
+         set status = v_status::public.content_status
        where id = v_target_id;
     end if;
   end if;
 
+  -- Cast written out: a CASE over text literals is text, and assigning that to
+  -- an enum column is 42804 rather than an implicit cast.
   update public.reports
-     set status = case when p_action = 'dismiss' then 'dismissed' else 'resolved' end,
+     set status = (case when p_action = 'dismiss' then 'dismissed' else 'resolved' end)
+                    ::public.report_status,
          resolved_by = auth.uid()
    where id = p_report_id;
 end;
@@ -774,7 +806,7 @@ Expected: **no rows.** Then:
 npm run test:db -- moderation
 ```
 
-Expected: 13 passing. Run the whole database project too — `spot_by_slug` changed shape and `app/data/spots.ts` maps it.
+Expected: 17 passing. Run the whole database project too — `spot_by_slug` changed shape and `app/data/spots.ts` maps it.
 
 - [ ] **Step 6: Mutation-test**
 
@@ -783,12 +815,23 @@ Expected: 13 passing. Run the whole database project too — `spot_by_slug` chan
 | Delete the `is_admin()` check in `resolve_report` | "refuses a caller who is not an admin" |
 | Delete the `is_admin()` check in `admin_report_queue` | "is refused to a non-admin" |
 | Drop the `p_action not in (...)` guard | "rejects an unknown action rather than resolving the report anyway" |
-| Drop the `hide` / non-spot guard | "refuses to hide a comment, which its status column cannot express" |
+| Drop the `hide` / non-spot guard | "refuses to hide a comment, **and says why rather than naming an enum**" — see below |
 | Skip the `reports` update at the end | "resolves the report in the same call" |
 | Skip the target update (resolve the report only) | "hides a spot, which a direct update cannot do even as an admin" |
 | `dismiss` also updates the target | "dismisses without touching the target" |
 
-The unknown-action row is the one worth running carefully: without the guard, `p_action::public.spot_status` raises a cast error *anyway*, so the test can pass for the wrong reason. Confirm the report is still `open` afterwards, not merely that something threw.
+**Two of these need care, and both were got wrong on the first pass.**
+
+The `hide`/non-spot guard is about the *message*, not the outcome: without it, `'hidden'::content_status` raises `22P02` and the report is left open just the same, so a test asserting "something threw" passes with the guard removed. Assert the sentence an admin would read — `only a spot can be hidden` — and that it is *not* `invalid input value`.
+
+The same applies to the unknown-action row: the cast fails anyway, so confirm the report is still `open`, not merely that something threw.
+
+**And verify the mutation reached the database, not just the file.** `psql` exits 0 even when a statement fails unless `-v ON_ERROR_STOP=1` is set, so a mutation whose SQL is invalid leaves the *original* function installed and the suite passes — indistinguishable from a surviving mutation. The first run of this table reported `hide → removed` as a survivor for exactly that reason; it is not. Check `pg_proc.prosrc` for the mutated text before believing any green result:
+
+```bash
+docker exec supabase_db_photospots psql -U postgres -d postgres -tAc \
+  "select prosrc like '%then ''removed'' else ''removed''%' from pg_proc where proname='resolve_report';"
+```
 
 - [ ] **Step 7: Commit**
 

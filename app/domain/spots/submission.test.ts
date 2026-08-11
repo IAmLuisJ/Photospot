@@ -95,3 +95,34 @@ describe("validateSubmission", () => {
     expect(errors.length).toBeGreaterThanOrEqual(3);
   });
 });
+
+describe("submission attributes", () => {
+  it("accepts a submission with no attributes at all", () => {
+    expect(errorsFor({})).toEqual([]);
+  });
+
+  it("accepts the vocabulary values", () => {
+    expect(errorsFor({ accessibility: ["wheelchair"], terrain: ["grass"] })).toEqual([]);
+  });
+
+  it("rejects an accessibility value outside the vocabulary", () => {
+    expect(errorsFor({ accessibility: ["teleporter"] }).some((e) => e.field === "accessibility")).toBe(true);
+  });
+
+  it("rejects a terrain value outside the vocabulary", () => {
+    expect(errorsFor({ terrain: ["lava"] }).some((e) => e.field === "terrain")).toBe(true);
+  });
+
+  it("rejects a negative walk time", () => {
+    expect(errorsFor({ walkMinutes: -1 }).some((e) => e.field === "walkMinutes")).toBe(true);
+  });
+
+  // Zero means you park at the spot, which is a real answer, not a missing one.
+  it("accepts a zero walk time", () => {
+    expect(errorsFor({ walkMinutes: 0 })).toEqual([]);
+  });
+
+  it("accepts a null walk time, since every attribute is optional", () => {
+    expect(errorsFor({ walkMinutes: null })).toEqual([]);
+  });
+});

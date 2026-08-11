@@ -16,6 +16,12 @@ import {
   type SubmissionInput,
 } from "~/domain/spots/submission";
 import { uploadSpotPhoto } from "~/lib/photo-upload.client";
+import {
+  AttributeFields,
+  checkedValuesFrom,
+  parseOptionalInt,
+  parseOptionalBool,
+} from "~/components/spot/AttributeFields";
 import { createClient } from "@supabase/supabase-js";
 import type { Route } from "./+types/submit";
 
@@ -77,6 +83,13 @@ export async function action({ request }: Route.ActionArgs) {
     region: String(form.get("region") ?? "") || null,
     shootTypeIds: form.getAll("shootTypeIds").map(Number).filter(Number.isFinite),
     photos,
+    // Collected at submission so a spot is findable immediately, rather than
+    // only once someone remembers to edit it.
+    costType: String(form.get("costType") ?? "") || null,
+    walkMinutes: parseOptionalInt(form, "walkMinutes"),
+    accessibility: checkedValuesFrom(form, "accessibility"),
+    terrain: checkedValuesFrom(form, "terrain"),
+    dogFriendly: parseOptionalBool(form, "dogFriendly"),
   };
 
   const { errors } = validateSubmission(input);
@@ -295,6 +308,16 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
             State
             <input name="region" defaultValue="MI" />
           </label>
+
+          <AttributeFields
+            current={{
+              costType: null,
+              walkMinutes: null,
+              accessibility: [],
+              terrain: [],
+              dogFriendly: null,
+            }}
+          />
         </details>
 
         {errorFor("form") && <p role="alert">{errorFor("form")}</p>}

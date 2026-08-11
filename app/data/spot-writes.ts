@@ -101,6 +101,15 @@ export async function createSpot(
       credit_url: p.creditUrl ?? "",
       caption: p.caption ?? "",
     })),
+    // `?? null` rather than `?? ""` for the arrays and the boolean: the RPC
+    // stores these as given, and null is "nobody said" where an empty array is
+    // "none of these apply". cost_type keeps the empty-string idiom the other
+    // text arguments use, because the RPC nullifs it before the enum cast.
+    p_cost_type: input.costType ?? "",
+    p_walk_minutes: input.walkMinutes ?? null,
+    p_accessibility: input.accessibility ?? null,
+    p_terrain: input.terrain ?? null,
+    p_dog_friendly: input.dogFriendly ?? null,
   });
 
   if (error) throw error;

@@ -1079,7 +1079,11 @@ Expected: exactly one row. Two rows means the drop's argument list did not match
 
 - [ ] **Step 5: Extend the RPC test**
 
-Append to `tests/db/rpcs.test.ts`'s `create_spot` block:
+**Correction to this plan:** there is no `create_spot` block in `tests/db/rpcs.test.ts`. `createSpot`
+is exercised through `tests/db/spot-writes.test.ts`, which already has a `submission()` fixture —
+put the tests there and reuse it, rather than building a second fixture beside the first.
+
+Append to `tests/db/spot-writes.test.ts`:
 
 ```ts
   it("stores the attributes it was given", async () => {

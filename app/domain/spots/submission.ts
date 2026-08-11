@@ -1,4 +1,5 @@
 import type { LatLng } from "../geo/distance";
+import { isAccessibilityValue, isTerrainValue } from "./attributes";
 
 /** Spec §4.2. The database enforces the same number in a trigger. */
 export const MAX_PHOTOS_PER_KIND = 6;
@@ -25,6 +26,12 @@ export interface SubmissionInput {
   region: string | null;
   shootTypeIds: number[];
   photos: PhotoInput[];
+  /** All optional (spec §4.7); absent and null both mean "nobody said". */
+  costType?: string | null;
+  walkMinutes?: number | null;
+  accessibility?: string[];
+  terrain?: string[];
+  dogFriendly?: boolean | null;
 }
 
 export interface FieldError {
@@ -81,6 +88,25 @@ export function validateSubmission(input: SubmissionInput): ValidationResult {
         message: `At most ${MAX_PHOTOS_PER_KIND} ${kind} photos. Link a full gallery instead.`,
       });
     }
+  }
+
+  // The check constraints are the authority; these exist so the user is told
+  // which value is wrong instead of seeing a 23514 that names the whole array.
+  for (const value of input.accessibility ?? []) {
+    if (!isAccessibilityValue(value)) {
+      errors.push({ field: "accessibility", message: `"${value}" is not an option.` });
+    }
+  }
+  for (const value of input.terrain ?? []) {
+    if (!isTerrainValue(value)) {
+      errors.push({ field: "terrain", message: `"${value}" is not an option.` });
+    }
+  }
+
+  // `!= null` covers both undefined and null in one check; zero is a real
+  // answer — you park at the spot — and must not be swept up as missing.
+  if (input.walkMinutes != null && input.walkMinutes < 0) {
+    errors.push({ field: "walkMinutes", message: "Walk time cannot be negative." });
   }
 
   return { errors };

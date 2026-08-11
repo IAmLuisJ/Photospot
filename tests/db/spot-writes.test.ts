@@ -258,3 +258,86 @@ describe("updateSpot attributes", () => {
     }
   });
 });
+
+describe("createSpot attributes", () => {
+  it("stores the attributes it was given", async () => {
+    const id = await createSpot(
+      author.client,
+      {
+        ...submission("Attributes At Birth"),
+        costType: "park_pass",
+        walkMinutes: 4,
+        accessibility: ["stroller"],
+        terrain: ["grass"],
+        dogFriendly: true,
+      },
+      `attrs-at-birth-${crypto.randomUUID().slice(0, 8)}`,
+    );
+    created.push(id);
+
+    const { data } = await serviceClient()
+      .from("spots")
+      .select("cost_type, walk_minutes, accessibility, terrain, dog_friendly")
+      .eq("id", id)
+      .single();
+    expect(data).toEqual({
+      cost_type: "park_pass",
+      walk_minutes: 4,
+      accessibility: ["stroller"],
+      terrain: ["grass"],
+      dog_friendly: true,
+    });
+  });
+
+  // Every attribute is optional (spec §4.7); a submission that sets none must
+  // still save, and must record "nobody said" rather than a guess.
+  it("still works with no attributes, leaving them null", async () => {
+    const id = await createSpot(
+      author.client,
+      submission("No Attributes"),
+      `no-attrs-${crypto.randomUUID().slice(0, 8)}`,
+    );
+    created.push(id);
+
+    const { data } = await serviceClient()
+      .from("spots")
+      .select("cost_type, walk_minutes, accessibility, terrain, dog_friendly")
+      .eq("id", id)
+      .single();
+    expect(data).toEqual({
+      cost_type: null,
+      walk_minutes: null,
+      accessibility: null,
+      terrain: null,
+      dog_friendly: null,
+    });
+  });
+
+  // An empty array is "none of these apply" and has to survive as distinct
+  // from null, or the two answers collapse into one.
+  it("keeps an empty array distinct from null", async () => {
+    const id = await createSpot(
+      author.client,
+      { ...submission("Empty Arrays"), accessibility: [], terrain: [] },
+      `empty-arrays-${crypto.randomUUID().slice(0, 8)}`,
+    );
+    created.push(id);
+
+    const { data } = await serviceClient()
+      .from("spots")
+      .select("accessibility, terrain")
+      .eq("id", id)
+      .single();
+    expect(data).toEqual({ accessibility: [], terrain: [] });
+  });
+
+  it("is refused by the constraint if a bad value gets past validation", async () => {
+    await expect(
+      createSpot(
+        author.client,
+        { ...submission("Bad Vocabulary"), accessibility: ["teleporter"] },
+        `bad-vocab-${crypto.randomUUID().slice(0, 8)}`,
+      ),
+    ).rejects.toMatchObject({ code: "23514" });
+  });
+});

@@ -2306,6 +2306,14 @@ describe("nextSnap", () => {
       expect(SNAP_HEIGHTS[snap]).toMatch(/^\d+(vh|%)$/);
     }
   });
+
+  // Ordered closed to open, so the sheet cannot be taller when peeking than
+  // when full — the kind of thing a careless edit to the constants would do.
+  it("orders the heights from smallest to largest", () => {
+    const value = (s: SheetSnap) => Number.parseInt(SNAP_HEIGHTS[s], 10);
+    expect(value("peek")).toBeLessThan(value("half"));
+    expect(value("half")).toBeLessThan(value("full"));
+  });
 });
 ```
 
@@ -2381,7 +2389,7 @@ import { nextSnap, SNAP_HEIGHTS, type SheetSnap } from "~/domain/explore/results
  *
  * Pointer events rather than touch events: they cover mouse, touch and pen from
  * one code path, and they make the sheet draggable with a mouse, which is the
- * only way it can be exercised in the desktop preview.
+ * only way it can be exercised in a desktop preview.
  *
  * All the rules live in `nextSnap`. This component only measures.
  */
@@ -2458,7 +2466,14 @@ In `app.css`, `touch-action: none` goes on `.results-sheet__handle` **only**. On
 
 - [ ] **Step 5: Verify at both sizes**
 
-Resize the preview to mobile (375×812) and confirm: the map fills the screen, the sheet drags between the three snap points, a flick works, the results scroll inside the sheet at full height, and the view pills are gone. Then desktop, and confirm all three views are unchanged from before this task. Take a screenshot of each.
+Resize the preview to mobile (375×812) and confirm: the map fills the screen, the sheet drags between the three snap points, a flick works, the results scroll inside the sheet at full height, and the view pills are gone. Then desktop, and confirm all three views are unchanged from before this task.
+
+**Two things this pass turned up, both real:**
+
+- **The filter pills fill the entire phone screen.** With every filter added in this milestone, the wrapping rows came to ~800px and completely hid the map that spec §8 wants full-screen here. Each row scrolls sideways on mobile instead, which brings the controls down to ~200px.
+- **A flex item with `overflow-x: auto` still has `min-width: auto`.** Without `min-width: 0` those rows refuse to shrink below their content and push the whole page wider than the screen rather than scrolling internally.
+
+Note that the preview pane's viewport emulation can report `document.documentElement.clientWidth` and `window.innerWidth` inconsistently (375 against 899 here), which makes a naive `scrollWidth > clientWidth` overflow check unreliable. Measure fit against `innerWidth` — the viewport the page was actually laid out in — and confirm `matchMedia('(max-width: 767px)').matches` before trusting any mobile measurement at all.
 
 - [ ] **Step 6: Commit**
 

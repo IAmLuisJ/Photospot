@@ -53,6 +53,100 @@ body {
   border-color: #1f2937;
 }
 
+.explore__tabs { display: flex; gap: 0.25rem; padding: 0 0.75rem 0.5rem; }
+.explore__tabs button {
+  padding: 0.25rem 0.7rem;
+  border: 1px solid rgb(0 0 0 / 0.2);
+  border-radius: 999px;
+  background: transparent;
+  cursor: pointer;
+  font: inherit;
+}
+.explore__tabs button[aria-pressed="true"] {
+  background: #1f2937;
+  color: white;
+  border-color: #1f2937;
+}
+
+/* Desktop keeps the three arrangements; the sheet is mobile-only. */
+.explore__sheet { display: none; }
+
+@media (max-width: 767px) {
+  /* Spec §8: on mobile all three views collapse to a full-screen map with a
+     draggable results sheet, so the view choice is desktop-only. */
+  .explore__results,
+  .explore__rail,
+  .explore__tabs,
+  .explore__views { display: none; }
+
+  .explore__map { position: fixed; inset: 0; z-index: 0; }
+  .explore__controls { position: relative; z-index: 2; }
+
+  /* Wrapping pills stack into a wall on a narrow screen — with every filter
+     added in this milestone the controls filled all 812px and the map, which
+     spec §8 wants full-screen here, was completely hidden behind them. Each
+     row scrolls sideways instead, so the whole set stays reachable in about a
+     fifth of the height. */
+  .explore__filters,
+  .filter-bar,
+  .filter-bar__group {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    scrollbar-width: none;
+    /* Required, not tidiness: a flex item keeps `min-width: auto`, so one of
+       these rows refuses to shrink below its content and pushes the whole page
+       wider than the screen — the row scrolls internally only once it is
+       allowed to be narrower than what is inside it. */
+    min-width: 0;
+    max-width: 100%;
+  }
+  .explore__filters::-webkit-scrollbar,
+  .filter-bar::-webkit-scrollbar,
+  .filter-bar__group::-webkit-scrollbar { display: none; }
+  .explore__filters > *,
+  .filter-bar > *,
+  .filter-bar__group > * { flex: 0 0 auto; }
+  /* Pushed to the end of a nowrap row by margin-left:auto, it would sit off
+     past every pill and be unreachable. */
+  .filter-bar__clear { margin-left: 0; }
+
+  .explore__sheet { display: block; }
+  .results-sheet {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 3;
+    display: flex;
+    flex-direction: column;
+    border-radius: 12px 12px 0 0;
+    background: canvas;
+    box-shadow: 0 -2px 16px rgb(0 0 0 / 0.25);
+    /* height, not transform: the body's scrollable area has to match what is
+       visible, and transforming would leave the list scrollable off-screen. */
+    transition: height 180ms ease-out;
+  }
+  /* touch-action goes on the handle ONLY. On the body it stops the results
+     scrolling, which is the entire point of dragging the sheet open. */
+  .results-sheet__handle {
+    touch-action: none;
+    cursor: grab;
+    padding: 0.6rem 0;
+    flex: 0 0 auto;
+  }
+  .results-sheet__handle::before {
+    content: "";
+    display: block;
+    width: 2.5rem;
+    height: 4px;
+    margin: 0 auto;
+    border-radius: 999px;
+    background: currentColor;
+    opacity: 0.35;
+  }
+  .results-sheet__body { overflow-y: auto; flex: 1 1 auto; padding: 0 0.75rem 1rem; }
+}
+
 /* Same pill shape as the view controls, including the aria-pressed state, so
    the visual state and the accessibility state cannot disagree. */
 .filter-bar {

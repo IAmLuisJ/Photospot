@@ -115,9 +115,18 @@ export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
 **Hosted Supabase.** `npx supabase login` has not been run, so there is no hosted project. Until
 then:
 
-- Production runs on **placeholder** `SUPABASE_URL` / `SUPABASE_ANON_KEY`. The site renders but
-  sign-in cannot work.
-- Live at https://photospots-arpo2u6zp-iamluisjs-projects.vercel.app
+- Production runs on **placeholder** `SUPABASE_URL` / `SUPABASE_ANON_KEY`, and the homepage is
+  therefore a **500**, not a degraded map. Measured against the live deployment, not inferred:
+  `/` → 500, `/auth/login` → 200, `/submit` and `/admin` → 302 to login. The home loader queries
+  Supabase on every request and `listSpotsInViewport` throws, which reaches the root
+  `ErrorBoundary` because `home.tsx` has none of its own.
+- Live at https://photospots.vercel.app — the per-deployment URLs are behind Vercel's
+  deployment protection and redirect to a Vercel login.
+
+**Worth deciding separately from the credentials:** a database outage taking the homepage to 500 is
+the same class of failure spec §10 rules out for tiles ("list, filters, and detail pages keep
+working with a degraded map"). Real credentials fix today's 500; they do not make the homepage
+survive Supabase being briefly unreachable.
 
 **To finish the deploy** once logged in: create/link a hosted project, `supabase db push` all
 fourteen migrations, set the real `SUPABASE_URL` and `SUPABASE_ANON_KEY` on Vercel

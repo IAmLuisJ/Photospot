@@ -361,8 +361,9 @@
             <div>
               <div class="item__title">Run <code>npx supabase login</code></div>
               <p class="item__why">
-                Never run, so there is no hosted project. Everything below waits on it, and nothing
-                in production can be verified until it exists.
+                Never run, so there is no hosted project. Everything below waits on it — and with
+                placeholder credentials the deployed homepage is a 500, not a degraded map,
+                because the home loader queries the database on every request.
               </p>
             </div>
             <span class="chip chip--blocked">Blocking</span>
@@ -524,8 +525,10 @@
 
   <footer>
     <p>
-      Branch <code>foundation</code>, 34 commits ahead of <code>origin/main</code>. Nothing is
-      pushed — a push to <code>main</code> triggers a production deploy automatically.
+      Merged to <code>main</code> and deployed on 12 Aug 2026. Live at
+      <code>photospots.vercel.app</code>, where the homepage currently returns 500 on placeholder
+      Supabase credentials; <code>/auth/login</code> serves normally. The per-deployment URLs sit
+      behind Vercel deployment protection.
     </p>
     <p>
       Detail lives in <code>docs/STATUS.md</code>; the traps this codebase has already hit are in

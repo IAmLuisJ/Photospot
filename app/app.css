@@ -392,3 +392,15 @@ body {
 }
 .report-row__actions button:disabled { opacity: 0.5; cursor: default; }
 .report-row [role="alert"] { color: #b42318; font-size: 0.85rem; margin: 0.4rem 0 0; }
+
+/* ---- Studio claim ---- */
+
+.studio-claim { margin-top: 2rem; }
+.studio-claim h2 { font-size: 1.05rem; margin-bottom: 0.4rem; }
+.studio-claim p { margin: 0.35rem 0; }
+.studio-claim button[type="submit"] {
+  margin-top: 0.5rem; padding: 0.45rem 1rem; border-radius: 6px;
+  border: 1px solid #1f2937; background: #1f2937; color: white; font: inherit; cursor: pointer;
+}
+.studio-claim [role="alert"] { color: #b42318; font-size: 0.9rem; }
+.studio-claim__done { color: #2f7a4a; font-weight: 600; }

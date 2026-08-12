@@ -5,6 +5,7 @@ export default [
   route("submit", "routes/submit.tsx"),
   route("spots/:slug", "routes/spots.$slug.tsx"),
   route("spots/:slug/edit", "routes/spots.$slug.edit.tsx"),
+  route("studios/:slug", "routes/studios.$slug.tsx"),
   route("admin", "routes/admin.tsx"),
   route("auth/login", "routes/auth.login.tsx"),
   route("auth/callback", "routes/auth.callback.tsx"),

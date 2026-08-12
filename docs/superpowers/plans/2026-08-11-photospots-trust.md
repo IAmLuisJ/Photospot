@@ -1620,7 +1620,11 @@ interface StudioRow {
   claimed_at: string | null;
 }
 
-/** Null for an outdoor spot, which has no studio_details row at all. */
+/**
+ * Null for an outdoor spot, which has no `studio_details` row at all —
+ * `maybeSingle()` rather than `single()`, which would call that a PGRST116
+ * error rather than an answer.
+ */
 export async function getStudioDetails(
   supabase: SupabaseClient,
   spotId: string,
@@ -1646,15 +1650,24 @@ export async function getStudioDetails(
 }
 
 /**
- * Spec §9.3: claiming is a command, not a row write. `claimed_by` is not
- * writable through PostgREST by anyone — only this function sets it, after
- * confirming the caller's own verified email matches the listing contact.
- * Without that check it would be first come, first served across every
- * unclaimed listing in the database.
+ * Spec §9.3: claiming is a command, not a row write. `claimed_by` is absent
+ * from the column grants, so only `claim_studio()` sets it, after confirming
+ * the caller's own verified email matches the listing contact. Allowing the
+ * column to be written directly would let any signed-in user claim any
+ * unclaimed studio — first come, first served, across every listing at once.
  */
 export async function claimStudio(supabase: SupabaseClient, spotId: string): Promise<void> {
   const { error } = await supabase.rpc("claim_studio", { p_spot_id: spotId });
   if (error) throw error;
+}
+
+/** Renders "$120/hour" from cents, or null when no rate is recorded. */
+export function hourlyRateLabel(cents: number | null): string | null {
+  if (cents === null) return null;
+  const dollars = cents / 100;
+  // No decimals on a whole number of dollars: "$120/hour", not "$120.00/hour".
+  const amount = Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
+  return `$${amount}/hour`;
 }
 ```
 
@@ -1662,7 +1675,9 @@ Note `maybeSingle()` rather than `single()`: an outdoor spot has no `studio_deta
 
 - [ ] **Step 3: Build `/studios/:slug`**
 
-Spec §8: the studio page is the spot page plus rate, booking link, and the claim flow. Reuse `getSpotBySlug`; add the studio fields. Show the claim control only when the listing is unclaimed and the viewer is signed in, and surface the mismatch error in words — "claiming needs a confirmed email matching the listing's contact address" — rather than the raw exception.
+Spec §8: the studio page is the spot page plus rate, booking link, and the claim flow. Reuse `getSpotBySlug`; add the studio fields. Show the claim control only when the listing is unclaimed and the viewer is signed in, and surface the mismatch error in words rather than the raw exception.
+
+**A trap this hit:** `claim_studio` raises three distinct messages and the route matches on them to choose which sentence to show — but **supabase-js rejects with a `PostgrestError`, which is a plain object, not an `Error`.** An `err instanceof Error ? err.message : ""` guard is therefore false for every one of them, and every refusal collapsed into the generic fallback. Read `message` off the thrown value directly. Only visible by driving it: the db tests pass either way, because `rejects.toThrow(/…/)` inspects the value's `message` property regardless of its prototype.
 
 Add `route("studios/:slug", "routes/studios.$slug.tsx")` to `app/routes.ts`.
 

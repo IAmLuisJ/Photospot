@@ -263,6 +263,12 @@ export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
         </section>
       )}
 
+      {spot.kind === "studio" && (
+        <p>
+          <Link to={`/studios/${spot.slug}`}>Rate, booking and ownership →</Link>
+        </p>
+      )}
+
       {canEdit && (
         <p>
           <Link to={`/spots/${spot.slug}/edit`}>Edit this spot</Link>

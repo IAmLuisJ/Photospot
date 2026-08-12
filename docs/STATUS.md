@@ -1,7 +1,10 @@
 # Project status
 
-**Last updated:** 2026-08-10 · **Branch:** `foundation`, tracking `origin/main` ·
-**Tests:** 440 passing across 45 files
+**Last updated:** 2026-08-11 · **Branch:** `foundation`, tracking `origin/main` ·
+**Tests:** 495 passing across 50 files
+
+**Launch tracker:** [`Progress.html`](Progress.html) — milestones, and what is left before this
+can be shown to anyone.
 
 Photospots is a map of photography locations, cultivated by local photographers. Design lives in
 [`superpowers/specs/2026-08-09-photospots-design.md`](superpowers/specs/2026-08-09-photospots-design.md).
@@ -20,7 +23,7 @@ bug this project already hit.
 | 3 · Contribution | [`contribution`](superpowers/plans/2026-08-10-photospots-contribution.md) | ✅ Submission, duplicate check, photo upload, editing |
 | 4 · Voting & comments | [`signals`](superpowers/plans/2026-08-10-photospots-signals.md) | ✅ Per-shoot-type upvotes, shoot-again, comments, score wiring |
 | 5 · Filters & views | [`filters`](superpowers/plans/2026-08-11-photospots-filters.md) | ✅ Attribute filters, remembered view, gallery tab, mobile sheet |
-| 6 · Trust & moderation | not written | ⬜ Next |
+| 6 · Trust & moderation | [`trust`](superpowers/plans/2026-08-11-photospots-trust.md) | 🟡 5 of 7 tasks — reports, queue and moderation done; studio claim and final pass left |
 
 Concretely, you can: browse a map of seeded Grand Rapids spots, filter by shoot type, switch between
 split/map/gallery views, open a spot page, sign in with a magic link, submit a new spot with photos
@@ -33,14 +36,18 @@ what is underfoot, whether dogs are welcome — at submission or by editing, and
 by any of it. Every filtered view is a shareable URL, the chosen view is remembered between visits,
 and on a phone all three views collapse to a full-screen map with a draggable results sheet.
 
+Anyone signed in can report a spot, photo or comment, and an admin can act on those reports at
+`/admin` — hide, remove or dismiss, with the target's status and the report closing together. A
+hidden spot leaves the map and its page 404s.
+
 ### Database
 
-Thirteen migrations. Functions: `spots_in_viewport`, `spot_by_slug`, `spot_signal_summary`,
+Fourteen migrations. Functions: `spots_in_viewport`, `spot_by_slug`, `spot_signal_summary`,
 `spots_within_meters`, `create_spot`, `cast_signal`, `claim_studio`, `slug_exists`, `recount_spot`,
-`is_admin`, `enforce_photo_cap`, plus trigger functions.
+`is_admin`, `enforce_photo_cap`, `resolve_report`, `admin_report_queue`, plus trigger functions.
 
-`spots_in_viewport` and `create_spot` were **dropped and recreated** to take their new arguments,
-not replaced. Postgres keys functions by their argument list, so `create or replace` with different
+`spots_in_viewport`, `create_spot` and `spot_by_slug` were **dropped and recreated** to change their
+signatures, not replaced. Postgres keys functions by their argument list, so `create or replace` with different
 parameters leaves two overloads live and PostgREST unable to choose. Check with
 `select proname, count(*) from pg_proc … having count(*) > 1` after touching either.
 
@@ -56,8 +63,9 @@ app/lib/       env.server, supabase.server, photo-url, photo-upload.client,
                view-preference.server
 app/components/ map/SpotMap, explore/SpotCard, explore/ExploreLayout,
                explore/FilterBar, explore/ResultsSheet,
-               spot/VotePanel, spot/CommentThread, spot/AttributeFields
-app/routes/    home (explore), submit, spots.$slug, spots.$slug.edit, auth.*
+               spot/VotePanel, spot/CommentThread, spot/AttributeFields,
+               spot/ReportButton, admin/ReportRow
+app/routes/    home (explore), submit, spots.$slug, spots.$slug.edit, admin, auth.*
 scripts/       seed-grand-rapids, backfill-scores, refresh-hot-scores
 ```
 
@@ -105,8 +113,8 @@ then:
   sign-in cannot work.
 - Live at https://photospots-arpo2u6zp-iamluisjs-projects.vercel.app
 
-**To finish the deploy** once logged in: create/link a hosted project, `supabase db push` all eight
-migrations, set the real `SUPABASE_URL` and `SUPABASE_ANON_KEY` on Vercel
+**To finish the deploy** once logged in: create/link a hosted project, `supabase db push` all
+fourteen migrations, set the real `SUPABASE_URL` and `SUPABASE_ANON_KEY` on Vercel
 (`vercel env add … production`), redeploy, and verify sign-in end to end against it.
 
 Vercel is already linked (project `photospots`, org `iamluisjs-projects`, GitHub repo connected).
@@ -114,27 +122,37 @@ Vercel is already linked (project `photospots`, org `iamluisjs-projects`, GitHub
 
 ---
 
-## Next: plan 6 — trust and moderation
+## Next: finish plan 6, then launch prep
 
-Milestone 6 in spec §13: reports, the admin queue, takedown handling, and the studio claim flow.
-Most of the database work already exists — the `reports` table with admin-only read and update, and
-`claim_studio()`, which verifies the caller's own confirmed email against the listing contact.
+**Two tasks left in [`trust`](superpowers/plans/2026-08-11-photospots-trust.md):**
 
-What plan 6 needs to add: a report control on spots, photos and comments; `/admin` as a single
-queue with hide and remove actions; and the studio claim flow end to end.
+- **Task 6 — studio listings and the claim flow.** `claim_studio()` has existed since plan 1 with no
+  caller, and there is no `/studios/:slug` route. Spec §9.3 verifies against the listing's
+  `contact_email` and the caller's own confirmed address.
+- **Task 7 — final verification and docs.** Clean migration replay, the overload audit, the whole
+  trust flow in a browser, then STATUS and README.
 
-Two things found during plan 5 that belong here:
+**After that the MVP milestones are done, and what remains is not code.** See
+[`Progress.html`](Progress.html) for the launch checklist. The two that gate everything:
 
-- **`signals.profile_id` is readable by `anon`**, so anyone can enumerate which profile voted on
-  which spot. `signals_read` is `using (true)` and vote *counts* are meant to be public, but the
-  per-person ballot is not.
-- **Anyone signed in is offered the edit link on every spot.** The action now says "only the person
-  who added this spot, or an admin, can edit it" instead of silently discarding the edit, but the
-  link should not be there in the first place. Hiding it needs `created_by` on the detail payload,
-  which `spot_by_slug` does not currently return.
+1. **The hosted Supabase deploy** — still Blocked above, and nothing else can be verified in
+   production until it is done.
+2. **Cold-start seeding.** Spec §14 names this the dominant risk and it is not a software risk:
+   the product is worthless with twenty spots and useful with two hundred. Budget real time for
+   30–50 Grand Rapids spots with real photos *before* any friend sees the site.
 
 ## Known gaps, deliberately deferred
 
+- **`signals.profile_id` is readable by `anon`**, so anyone can enumerate which profile voted on
+  which spot. `signals_read` is `using (true)` and vote *counts* are meant to be public, but the
+  per-person ballot is not. Deliberately left out of plan 6: it is a privacy fix to a policy every
+  page reads, and deserves its own change with its own verification.
+- **Reports have no rate limit.** One angry user can file fifty, and the queue is the only thing
+  that makes that visible. Knowing what limit to set needs the queue in use first.
+- **A report whose target is deleted keeps only `dismiss`.** `reports.target_id` is polymorphic with
+  no foreign key, so the row survives its target and the queue must still be clearable.
+- **No moderation audit log.** `reports.resolved_by` records who closed each report, which is the
+  accountability the MVP needs; a full history of every status change is not built.
 - **Filters exclude spots whose data is missing, and the count cannot say which.** A filter
   promising a short walk correctly hides spots with no walk time recorded — but the "N spots do not
   match" notice mixes those with spots that genuinely do not match, because the summary rows do not

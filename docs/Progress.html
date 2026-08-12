@@ -1,0 +1,560 @@
+<meta charset="utf-8">
+<title>Photospots — launch tracker</title>
+<style>
+  /* Light is the base set. Every colour is defined here so nothing depends on
+     a media query having matched. */
+  :root {
+    --paper:      #f6f8f5;
+    --card:       #ffffff;
+    --ink:        #14201a;
+    --slate:      #5b6b62;
+    --hairline:   #d8e0d9;
+    --moss:       #346b47;
+    --moss-soft:  #e4efe6;
+    --brass:      #8a6410;
+    --brass-soft: #f6eddb;
+    --clay:       #9a3b28;
+    --clay-soft:  #f8e7e2;
+    --shadow:     0 1px 2px rgb(20 32 26 / 0.06), 0 4px 16px rgb(20 32 26 / 0.05);
+
+    --serif: "Iowan Old Style", "Palatino Linotype", Palatino, "Book Antiqua", Georgia, serif;
+    --sans: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace;
+  }
+
+  /* Redefine tokens only. Guarded so an explicit light choice beats a dark OS. */
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --paper:      #0e1613;
+      --card:       #16211c;
+      --ink:        #e8efe9;
+      --slate:      #9baba1;
+      --hairline:   #27352d;
+      --moss:       #6fbb87;
+      --moss-soft:  #1b2f22;
+      --brass:      #d6a33f;
+      --brass-soft: #2e2413;
+      --clay:       #e08267;
+      --clay-soft:  #331a14;
+      --shadow:     0 1px 2px rgb(0 0 0 / 0.4), 0 4px 18px rgb(0 0 0 / 0.3);
+    }
+  }
+
+  /* And again for the explicit toggle, so it wins in both directions. */
+  :root[data-theme="dark"] {
+    --paper:      #0e1613;
+    --card:       #16211c;
+    --ink:        #e8efe9;
+    --slate:      #9baba1;
+    --hairline:   #27352d;
+    --moss:       #6fbb87;
+    --moss-soft:  #1b2f22;
+    --brass:      #d6a33f;
+    --brass-soft: #2e2413;
+    --clay:       #e08267;
+    --clay-soft:  #331a14;
+    --shadow:     0 1px 2px rgb(0 0 0 / 0.4), 0 4px 18px rgb(0 0 0 / 0.3);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    /* Explicit, from a token: a transparent body borrows the host's ground. */
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--sans);
+    font-size: 16px;
+    line-height: 1.55;
+    margin: 0;
+    padding: 2.5rem 1.25rem 5rem;
+  }
+
+  .wrap { max-width: 72rem; margin: 0 auto; display: flex; flex-direction: column; gap: 2.75rem; }
+
+  /* ---- Masthead ---- */
+
+  .masthead { display: flex; flex-direction: column; gap: 0.5rem; }
+  .eyebrow {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--slate);
+    margin: 0;
+  }
+  h1 {
+    font-family: var(--serif);
+    font-size: clamp(2rem, 5vw, 2.9rem);
+    line-height: 1.1;
+    font-weight: 600;
+    margin: 0;
+    text-wrap: balance;
+  }
+  .standfirst {
+    margin: 0;
+    max-width: 60ch;
+    color: var(--slate);
+    font-size: 1.02rem;
+  }
+
+  /* ---- Summary tiles ---- */
+
+  .tiles {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(11rem, 1fr));
+    gap: 0.9rem;
+  }
+  .tile {
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 0.95rem 1.05rem;
+    box-shadow: var(--shadow);
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
+  }
+  .tile__value {
+    font-family: var(--mono);
+    font-variant-numeric: tabular-nums;
+    font-size: 1.7rem;
+    line-height: 1.1;
+    font-weight: 600;
+  }
+  .tile__label {
+    font-size: 0.78rem;
+    color: var(--slate);
+    letter-spacing: 0.02em;
+  }
+  .tile--blocked .tile__value { color: var(--clay); }
+  .tile--go .tile__value { color: var(--moss); }
+
+  /* ---- Sections ---- */
+
+  section { display: flex; flex-direction: column; gap: 1.1rem; }
+  h2 {
+    font-family: var(--serif);
+    font-size: 1.45rem;
+    font-weight: 600;
+    margin: 0;
+    display: flex;
+    align-items: baseline;
+    gap: 0.7rem;
+    text-wrap: balance;
+  }
+  h2 .count {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    font-weight: 400;
+    color: var(--slate);
+    font-variant-numeric: tabular-nums;
+  }
+  .section-note { margin: -0.4rem 0 0; color: var(--slate); max-width: 68ch; font-size: 0.95rem; }
+
+  /* ---- Milestones: a real sequence, so the numbers mean something ---- */
+
+  .milestones { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+  .milestone {
+    display: grid;
+    grid-template-columns: 2.6rem 1fr auto;
+    gap: 0.9rem;
+    align-items: start;
+    background: var(--card);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 0.8rem 1rem;
+  }
+  .milestone__no {
+    font-family: var(--mono);
+    font-size: 0.95rem;
+    font-variant-numeric: tabular-nums;
+    color: var(--slate);
+    padding-top: 0.1rem;
+  }
+  .milestone__body { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+  .milestone__name { font-weight: 600; }
+  .milestone__detail { color: var(--slate); font-size: 0.9rem; }
+
+  /* ---- State chips: state in form as well as words ---- */
+
+  .chip {
+    font-family: var(--mono);
+    font-size: 0.68rem;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    padding: 0.22rem 0.55rem;
+    border-radius: 999px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .chip--done    { background: var(--moss-soft);  color: var(--moss);  border-color: var(--moss); }
+  .chip--active  { background: var(--brass-soft); color: var(--brass); border-color: var(--brass); }
+  .chip--blocked { background: var(--clay-soft);  color: var(--clay);  border-color: var(--clay); }
+  .chip--todo    { background: transparent;       color: var(--slate); border-color: var(--hairline); }
+
+  /* ---- Checklist ---- */
+
+  .group { display: flex; flex-direction: column; gap: 0.55rem; }
+  .group__head {
+    font-family: var(--mono);
+    font-size: 0.72rem;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--slate);
+    margin: 0.6rem 0 0;
+    padding-bottom: 0.35rem;
+    border-bottom: 1px solid var(--hairline);
+  }
+  .items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+  .item {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: 0.75rem 1rem;
+    align-items: start;
+    padding: 0.6rem 0.1rem;
+  }
+  .item + .item { border-top: 1px dashed var(--hairline); }
+  .item__title { font-weight: 600; }
+  .item__why { color: var(--slate); font-size: 0.9rem; margin: 0.15rem 0 0; max-width: 66ch; }
+  code {
+    font-family: var(--mono);
+    font-size: 0.86em;
+    background: var(--moss-soft);
+    color: var(--ink);
+    padding: 0.08em 0.34em;
+    border-radius: 4px;
+  }
+
+  /* ---- Gaps table ---- */
+
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; min-width: 34rem; font-size: 0.92rem; }
+  th, td { text-align: left; padding: 0.55rem 0.8rem 0.55rem 0; border-bottom: 1px solid var(--hairline); vertical-align: top; }
+  th {
+    font-family: var(--mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: var(--slate);
+    font-weight: 400;
+  }
+  td:first-child { font-weight: 600; padding-right: 1.2rem; }
+
+  footer {
+    color: var(--slate);
+    font-size: 0.85rem;
+    border-top: 1px solid var(--hairline);
+    padding-top: 1.1rem;
+  }
+  footer p { margin: 0.25rem 0; }
+
+  a { color: var(--moss); }
+  a:focus-visible, summary:focus-visible { outline: 2px solid var(--brass); outline-offset: 2px; }
+
+  @media (min-width: 60rem) {
+    .split { display: grid; grid-template-columns: 1.05fr 1fr; gap: 2.75rem; align-items: start; }
+  }
+</style>
+
+<div class="wrap">
+  <header class="masthead">
+    <p class="eyebrow">Photospots · launch tracker · 11 Aug 2026</p>
+    <h1>Five milestones done, one nearly. Nothing is live yet.</h1>
+    <p class="standfirst">
+      The application is close to finished. What stands between it and a first user is one
+      unrun command, a map-tile account, and forty photographs — none of which is code.
+    </p>
+  </header>
+
+  <div class="tiles">
+    <div class="tile tile--go">
+      <span class="tile__value">495</span>
+      <span class="tile__label">tests passing, 50 files</span>
+    </div>
+    <div class="tile">
+      <span class="tile__value">5<span style="color: var(--slate); font-size: 0.6em"> of 6</span></span>
+      <span class="tile__label">milestones done · 6th at 5 of 7 tasks</span>
+    </div>
+    <div class="tile">
+      <span class="tile__value">14</span>
+      <span class="tile__label">migrations, replayed clean</span>
+    </div>
+    <div class="tile tile--blocked">
+      <span class="tile__value">6</span>
+      <span class="tile__label">hard gates before launch</span>
+    </div>
+  </div>
+
+  <div class="split">
+    <section>
+      <h2>Milestones <span class="count">spec §13</span></h2>
+      <p class="section-note">
+        The sequence is the one the design spec sets out; each was meant to be independently
+        demonstrable, and each has been.
+      </p>
+      <ol class="milestones">
+        <li class="milestone">
+          <span class="milestone__no">01</span>
+          <span class="milestone__body">
+            <span class="milestone__name">Foundation</span>
+            <span class="milestone__detail">Schema, row-level security, auth, the pure domain layer.</span>
+          </span>
+          <span class="chip chip--done">Done</span>
+        </li>
+        <li class="milestone">
+          <span class="milestone__no">02</span>
+          <span class="milestone__body">
+            <span class="milestone__name">Explore</span>
+            <span class="milestone__detail">Viewport map, shoot-type filters, three views, spot pages.</span>
+          </span>
+          <span class="chip chip--done">Done</span>
+        </li>
+        <li class="milestone">
+          <span class="milestone__no">03</span>
+          <span class="milestone__body">
+            <span class="milestone__name">Contribution</span>
+            <span class="milestone__detail">Submission with a duplicate check, photo upload, editing.</span>
+          </span>
+          <span class="chip chip--done">Done</span>
+        </li>
+        <li class="milestone">
+          <span class="milestone__no">04</span>
+          <span class="milestone__body">
+            <span class="milestone__name">Voting &amp; comments</span>
+            <span class="milestone__detail">Per-shoot-type upvotes, “would you shoot here again?”, comments, live score.</span>
+          </span>
+          <span class="chip chip--done">Done</span>
+        </li>
+        <li class="milestone">
+          <span class="milestone__no">05</span>
+          <span class="milestone__body">
+            <span class="milestone__name">Filters &amp; views</span>
+            <span class="milestone__detail">Cost, walk, accessibility and dog filters; remembered view; mobile sheet.</span>
+          </span>
+          <span class="chip chip--done">Done</span>
+        </li>
+        <li class="milestone">
+          <span class="milestone__no">06</span>
+          <span class="milestone__body">
+            <span class="milestone__name">Trust &amp; moderation</span>
+            <span class="milestone__detail">
+              Reports, the admin queue and moderation all work. Studio claims and the final
+              verification pass are left — 5 of 7 tasks.
+            </span>
+          </span>
+          <span class="chip chip--active">In progress</span>
+        </li>
+      </ol>
+    </section>
+
+    <section>
+      <h2>Before anyone sees it <span class="count">6 hard gates</span></h2>
+      <p class="section-note">
+        Ordered by what blocks what. The first four are a single afternoon; the fifth is the one
+        that actually decides whether the product works.
+      </p>
+
+      <div class="group">
+        <p class="group__head">Gate 1 · Hosted database</p>
+        <ul class="items">
+          <li class="item">
+            <div>
+              <div class="item__title">Run <code>npx supabase login</code></div>
+              <p class="item__why">
+                Never run, so there is no hosted project. Everything below waits on it, and nothing
+                in production can be verified until it exists.
+              </p>
+            </div>
+            <span class="chip chip--blocked">Blocking</span>
+          </li>
+          <li class="item">
+            <div>
+              <div class="item__title">Create the project and push all 14 migrations</div>
+              <p class="item__why">
+                <code>supabase db push</code>. They replay clean from empty locally, which is the
+                check that they will apply at all.
+              </p>
+            </div>
+            <span class="chip chip--todo">Waiting</span>
+          </li>
+          <li class="item">
+            <div>
+              <div class="item__title">Set three environment variables on Vercel</div>
+              <p class="item__why">
+                <code>SUPABASE_URL</code>, <code>SUPABASE_ANON_KEY</code>, and —
+                easily missed — <code>SUPABASE_SERVICE_ROLE_KEY</code>. Voting and commenting
+                need the third: <code>spots.score</code> is deliberately not writable by ordinary
+                users, so the server refreshes it with the service role.
+              </p>
+            </div>
+            <span class="chip chip--todo">Waiting</span>
+          </li>
+          <li class="item">
+            <div>
+              <div class="item__title">Verify sign-in against production</div>
+              <p class="item__why">
+                Script it rather than clicking it. Two silent auth bugs in this project were only
+                ever found by driving the magic-link flow end to end.
+              </p>
+            </div>
+            <span class="chip chip--todo">Waiting</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <p class="group__head">Gate 2 · Map tiles</p>
+        <ul class="items">
+          <li class="item">
+            <div>
+              <div class="item__title">Point <code>MAP_STYLE_URL</code> at a real provider</div>
+              <p class="item__why">
+                It currently defaults to MapLibre's demo tiles, which are development-only.
+                Protomaps or MapTiler — both bill flat rather than per map load, which is the right
+                shape for a free product whose core interaction is panning around.
+              </p>
+            </div>
+            <span class="chip chip--blocked">Blocking</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <p class="group__head">Gate 3 · Something worth looking at</p>
+        <ul class="items">
+          <li class="item">
+            <div>
+              <div class="item__title">Seed 30–50 Grand Rapids spots with real photographs</div>
+              <p class="item__why">
+                The spec names this the dominant risk, and it is not a software risk. The map is
+                worthless with twenty spots and useful with two hundred; someone who opens it and
+                finds four pins does not come back. Six seeded spots exist today.
+              </p>
+            </div>
+            <span class="chip chip--blocked">Blocking</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="group">
+        <p class="group__head">Finish the code first</p>
+        <ul class="items">
+          <li class="item">
+            <div>
+              <div class="item__title">Studio listings and the owner claim flow</div>
+              <p class="item__why">
+                <code>claim_studio()</code> has existed since milestone 1 and has never had a
+                caller; there is no <code>/studios/:slug</code> route yet.
+              </p>
+            </div>
+            <span class="chip chip--active">Next</span>
+          </li>
+          <li class="item">
+            <div>
+              <div class="item__title">Final verification and docs pass</div>
+              <p class="item__why">
+                Clean migration replay, the function-overload audit, and the whole trust flow driven
+                in a browser.
+              </p>
+            </div>
+            <span class="chip chip--todo">Queued</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+  </div>
+
+  <section>
+    <h2>Worth doing before real users, not before launch</h2>
+    <p class="section-note">
+      None of these stops a launch. Two are privacy or abuse questions that get worse with traffic,
+      so they are worth doing while the traffic is still friends.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Item</th><th>Why it matters</th><th>Weight</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Ballot privacy</td>
+            <td><code>signals.profile_id</code> is readable by anyone, so who voted for what can be enumerated. Vote counts are meant to be public; the per-person ballot is not.</td>
+            <td><span class="chip chip--todo">Privacy</span></td>
+          </tr>
+          <tr>
+            <td>Report rate limiting</td>
+            <td>One angry person can file fifty reports. The admin queue is what makes that visible, which is the prerequisite for knowing what limit to set.</td>
+            <td><span class="chip chip--todo">Abuse</span></td>
+          </tr>
+          <tr>
+            <td>Schedule <code>refresh:hot</code></td>
+            <td>The “what's happening now” ranking works and is tested, but nothing runs it, so hot scores never move.</td>
+            <td><span class="chip chip--todo">Ops</span></td>
+          </tr>
+          <tr>
+            <td>Sweep orphaned photos</td>
+            <td>Photos upload before the spot exists, so an abandoned submission leaves files in storage that nothing ever collects.</td>
+            <td><span class="chip chip--todo">Ops</span></td>
+          </tr>
+          <tr>
+            <td>Replace a photo on an existing spot</td>
+            <td>Editing covers text fields and gallery links only. A bad photo currently has to be lived with.</td>
+            <td><span class="chip chip--todo">Gap</span></td>
+          </tr>
+          <tr>
+            <td>Comment dates show UTC</td>
+            <td>A comment posted at 8pm Eastern reads as tomorrow. The honest fix needs the viewer's timezone, which the server cannot know.</td>
+            <td><span class="chip chip--todo">Polish</span></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Deliberately not built</h2>
+    <p class="section-note">
+      Recorded so nobody re-opens them by accident. Each was a decision, not an omission.
+    </p>
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr><th>Not built</th><th>Reasoning</th></tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td>Sponsorships and ads</td>
+            <td>The data model leaves the seam. The feature waits for traffic worth selling.</td>
+          </tr>
+          <tr>
+            <td>Server-side clustering</td>
+            <td>The viewport query caps at 500 rows, which is fine until one view holds more than that. Designing it needs a real corpus.</td>
+          </tr>
+          <tr>
+            <td>An index on the filter columns</td>
+            <td>Measured at 5,000 synthetic spots: the geographic index does the work, and a GIN index buys about 11% against a write cost on every vote.</td>
+          </tr>
+          <tr>
+            <td>Pre-publish review queue</td>
+            <td>A queue only the author can clear becomes a bottleneck the moment the product works. Spam risk at this scale is negligible.</td>
+          </tr>
+          <tr>
+            <td>Threaded comments, notifications, saved lists</td>
+            <td>Explicitly out of MVP scope.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <footer>
+    <p>
+      Branch <code>foundation</code>, 31 commits ahead of <code>origin/main</code>. Nothing is
+      pushed — a push to <code>main</code> triggers a production deploy automatically.
+    </p>
+    <p>
+      Detail lives in <code>docs/STATUS.md</code>; the traps this codebase has already hit are in
+      <code>docs/ENGINEERING-NOTES.md</code>, and every entry there was a real bug.
+    </p>
+  </footer>
+</div>

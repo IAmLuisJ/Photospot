@@ -18,8 +18,11 @@ Grand-Rapids-specific.
 **You can add spots, rate them, and find them again.** Browse the map, narrow it to what will
 actually work — free, a short walk from parking, stroller-friendly — submit a location with photos
 after a duplicate check, then upvote it for the kind of shoot it suits, answer "would you shoot
-here again?", and leave a comment. Every filtered view is a shareable link. 440 tests. Reports and
-moderation are next.
+here again?", and leave a comment. Report anything that needs a moderator; claim your studio if one
+of these listings is yours. Every filtered view is a shareable link. 509 tests.
+
+**The MVP is feature-complete.** What is left is a hosted database, real map tiles, and forty
+photographs — see [`docs/Progress.html`](docs/Progress.html).
 
 | | |
 | --- | --- |
@@ -30,7 +33,8 @@ moderation are next.
 | ✅ Contribution | Submission with duplicate check, photo upload, editing, gallery links |
 | ✅ Voting & comments | Per-shoot-type upvotes, shoot-again, comments, live score |
 | ✅ Filters & views | Cost, walk, accessibility and dog filters; remembered view; mobile sheet |
-| ⬜ Next | Reports, admin queue, studio claims |
+| ✅ Trust & moderation | Reports, admin queue with hide/remove/dismiss, studio claims |
+| ⬜ Next | Hosted deploy, map tiles, and seeding the map |
 
 **Working on this?** Start with [`docs/STATUS.md`](docs/STATUS.md) for where things stand and what's
 next, and [`docs/ENGINEERING-NOTES.md`](docs/ENGINEERING-NOTES.md) for the traps this codebase has

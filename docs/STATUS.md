@@ -1,7 +1,7 @@
 # Project status
 
 **Last updated:** 2026-08-11 · **Branch:** `foundation`, tracking `origin/main` ·
-**Tests:** 495 passing across 50 files
+**Tests:** 509 passing across 52 files
 
 **Launch tracker:** [`Progress.html`](Progress.html) — milestones, and what is left before this
 can be shown to anyone.
@@ -23,7 +23,7 @@ bug this project already hit.
 | 3 · Contribution | [`contribution`](superpowers/plans/2026-08-10-photospots-contribution.md) | ✅ Submission, duplicate check, photo upload, editing |
 | 4 · Voting & comments | [`signals`](superpowers/plans/2026-08-10-photospots-signals.md) | ✅ Per-shoot-type upvotes, shoot-again, comments, score wiring |
 | 5 · Filters & views | [`filters`](superpowers/plans/2026-08-11-photospots-filters.md) | ✅ Attribute filters, remembered view, gallery tab, mobile sheet |
-| 6 · Trust & moderation | [`trust`](superpowers/plans/2026-08-11-photospots-trust.md) | 🟡 5 of 7 tasks — reports, queue and moderation done; studio claim and final pass left |
+| 6 · Trust & moderation | [`trust`](superpowers/plans/2026-08-11-photospots-trust.md) | ✅ Reports, admin queue, moderation, studio claims |
 
 Concretely, you can: browse a map of seeded Grand Rapids spots, filter by shoot type, switch between
 split/map/gallery views, open a spot page, sign in with a magic link, submit a new spot with photos
@@ -38,7 +38,12 @@ and on a phone all three views collapse to a full-screen map with a draggable re
 
 Anyone signed in can report a spot, photo or comment, and an admin can act on those reports at
 `/admin` — hide, remove or dismiss, with the target's status and the report closing together. A
-hidden spot leaves the map and its page 404s.
+hidden spot leaves the map and its page 404s. Studio listings have their own page at
+`/studios/:slug` with rate and booking link, and an owner can claim one by signing in with the
+address on the listing.
+
+**That completes the six MVP milestones.** What remains before launch is not code — see
+[`Progress.html`](Progress.html).
 
 ### Database
 
@@ -65,7 +70,8 @@ app/components/ map/SpotMap, explore/SpotCard, explore/ExploreLayout,
                explore/FilterBar, explore/ResultsSheet,
                spot/VotePanel, spot/CommentThread, spot/AttributeFields,
                spot/ReportButton, admin/ReportRow
-app/routes/    home (explore), submit, spots.$slug, spots.$slug.edit, admin, auth.*
+app/routes/    home (explore), submit, spots.$slug, spots.$slug.edit,
+               studios.$slug, admin, auth.*
 scripts/       seed-grand-rapids, backfill-scores, refresh-hot-scores
 ```
 
@@ -122,24 +128,22 @@ Vercel is already linked (project `photospots`, org `iamluisjs-projects`, GitHub
 
 ---
 
-## Next: finish plan 6, then launch prep
+## Next: launch, not code
 
-**Two tasks left in [`trust`](superpowers/plans/2026-08-11-photospots-trust.md):**
+**The six MVP milestones are complete.** Every remaining item is in
+[`Progress.html`](Progress.html), which is the tracker to work from. The two that gate everything:
 
-- **Task 6 — studio listings and the claim flow.** `claim_studio()` has existed since plan 1 with no
-  caller, and there is no `/studios/:slug` route. Spec §9.3 verifies against the listing's
-  `contact_email` and the caller's own confirmed address.
-- **Task 7 — final verification and docs.** Clean migration replay, the overload audit, the whole
-  trust flow in a browser, then STATUS and README.
-
-**After that the MVP milestones are done, and what remains is not code.** See
-[`Progress.html`](Progress.html) for the launch checklist. The two that gate everything:
-
-1. **The hosted Supabase deploy** — still Blocked above, and nothing else can be verified in
-   production until it is done.
+1. **The hosted Supabase deploy** — still Blocked above. Nothing can be verified in production
+   until it exists, and the environment needs three variables, not two:
+   `SUPABASE_SERVICE_ROLE_KEY` is required because `spots.score` is deliberately not writable by
+   ordinary users and the server refreshes it with the service role. Deploying without it looks
+   fine until the first vote.
 2. **Cold-start seeding.** Spec §14 names this the dominant risk and it is not a software risk:
-   the product is worthless with twenty spots and useful with two hundred. Budget real time for
-   30–50 Grand Rapids spots with real photos *before* any friend sees the site.
+   the map is worthless with twenty spots and useful with two hundred. Six exist. Budget real time
+   for 30–50 Grand Rapids spots with real photographs *before* any friend sees the site.
+
+Also needed before launch: a real `MAP_STYLE_URL`. The default is MapLibre's demo tiles, which are
+development-only.
 
 ## Known gaps, deliberately deferred
 

@@ -205,6 +205,27 @@ permitted. `updateSpot` returns a boolean for exactly this reason.
 > detail page offers the link to everyone. Filling it in as a non-owner redirected to the spot page
 > looking successful. Found by driving the form while verifying something else.
 
+### A rejected supabase-js call is not an `Error`
+
+`supabase-js` rejects with a `PostgrestError` — a plain object with `message` and `code`. It is not
+an instance of `Error`, so the reflex guard
+
+```ts
+const message = err instanceof Error ? err.message : "";
+```
+
+is **false for every database failure**, and any branch keyed on the message never runs.
+
+> **How it surfaced:** the studio claim route matches `claim_studio`'s three distinct messages to
+> pick which explanation to show. With that guard, every refusal collapsed into the generic "Could
+> not claim this listing", including the one case the owner actually needs to read. The database
+> tests did not catch it — `rejects.toThrow(/…/)` inspects a thrown value's `message` property
+> regardless of its prototype, so they pass either way. It only appeared by driving the form.
+
+Read `message` off the thrown value directly when you need it. Where a generic fallback is
+genuinely wanted — surfacing raw Postgres text to a user rarely is — the `instanceof` guard is
+still fine, and the other routes here keep it deliberately.
+
 ### supabase-js returns errors, it does not throw
 
 `await supabase.from(…).insert(…)` without checking `error` fails silently.

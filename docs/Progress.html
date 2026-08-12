@@ -259,28 +259,28 @@
 <div class="wrap">
   <header class="masthead">
     <p class="eyebrow">Photospots · launch tracker · 11 Aug 2026</p>
-    <h1>Five milestones done, one nearly. Nothing is live yet.</h1>
+    <h1>The application is finished. Nothing is live yet.</h1>
     <p class="standfirst">
-      The application is close to finished. What stands between it and a first user is one
-      unrun command, a map-tile account, and forty photographs — none of which is code.
+      All six milestones are done. What stands between this and a first user is one unrun
+      command, a map-tile account, and forty photographs — none of which is code.
     </p>
   </header>
 
   <div class="tiles">
     <div class="tile tile--go">
-      <span class="tile__value">495</span>
-      <span class="tile__label">tests passing, 50 files</span>
+      <span class="tile__value">509</span>
+      <span class="tile__label">tests passing, 52 files</span>
     </div>
     <div class="tile">
-      <span class="tile__value">5<span style="color: var(--slate); font-size: 0.6em"> of 6</span></span>
-      <span class="tile__label">milestones done · 6th at 5 of 7 tasks</span>
+      <span class="tile__value">6<span style="color: var(--slate); font-size: 0.6em"> of 6</span></span>
+      <span class="tile__label">MVP milestones complete</span>
     </div>
     <div class="tile">
       <span class="tile__value">14</span>
       <span class="tile__label">migrations, replayed clean</span>
     </div>
     <div class="tile tile--blocked">
-      <span class="tile__value">6</span>
+      <span class="tile__value">4</span>
       <span class="tile__label">hard gates before launch</span>
     </div>
   </div>
@@ -338,19 +338,19 @@
           <span class="milestone__body">
             <span class="milestone__name">Trust &amp; moderation</span>
             <span class="milestone__detail">
-              Reports, the admin queue and moderation all work. Studio claims and the final
-              verification pass are left — 5 of 7 tasks.
+              Reports on spots, photos and comments; an admin queue with hide, remove and dismiss;
+              studio listings claimable by their owner.
             </span>
           </span>
-          <span class="chip chip--active">In progress</span>
+          <span class="chip chip--done">Done</span>
         </li>
       </ol>
     </section>
 
     <section>
-      <h2>Before anyone sees it <span class="count">6 hard gates</span></h2>
+      <h2>Before anyone sees it <span class="count">4 hard gates</span></h2>
       <p class="section-note">
-        Ordered by what blocks what. The first four are a single afternoon; the fifth is the one
+        Ordered by what blocks what. The first is a single afternoon's work; the last is the one
         that actually decides whether the product works.
       </p>
 
@@ -436,31 +436,6 @@
         </ul>
       </div>
 
-      <div class="group">
-        <p class="group__head">Finish the code first</p>
-        <ul class="items">
-          <li class="item">
-            <div>
-              <div class="item__title">Studio listings and the owner claim flow</div>
-              <p class="item__why">
-                <code>claim_studio()</code> has existed since milestone 1 and has never had a
-                caller; there is no <code>/studios/:slug</code> route yet.
-              </p>
-            </div>
-            <span class="chip chip--active">Next</span>
-          </li>
-          <li class="item">
-            <div>
-              <div class="item__title">Final verification and docs pass</div>
-              <p class="item__why">
-                Clean migration replay, the function-overload audit, and the whole trust flow driven
-                in a browser.
-              </p>
-            </div>
-            <span class="chip chip--todo">Queued</span>
-          </li>
-        </ul>
-      </div>
     </section>
   </div>
 
@@ -549,7 +524,7 @@
 
   <footer>
     <p>
-      Branch <code>foundation</code>, 31 commits ahead of <code>origin/main</code>. Nothing is
+      Branch <code>foundation</code>, 34 commits ahead of <code>origin/main</code>. Nothing is
       pushed — a push to <code>main</code> triggers a production deploy automatically.
     </p>
     <p>

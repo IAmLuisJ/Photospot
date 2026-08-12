@@ -99,7 +99,7 @@ Probed against the running database rather than read off the schema, because pla
 **Files:**
 - Create: `app/domain/reports/reasons.ts`, `app/domain/reports/reasons.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `app/domain/reports/reasons.test.ts`:
 
@@ -169,7 +169,7 @@ describe("actionsFor", () => {
 });
 ```
 
-- [ ] **Step 2: Run it and watch it fail**
+- [x] **Step 2: Run it and watch it fail**
 
 ```bash
 npm run test:unit -- reasons
@@ -177,7 +177,7 @@ npm run test:unit -- reasons
 
 Expected: FAIL — `Failed to resolve import "./reasons"`.
 
-- [ ] **Step 3: Write the implementation**
+- [x] **Step 3: Write the implementation**
 
 Create `app/domain/reports/reasons.ts`:
 
@@ -229,7 +229,7 @@ export function actionsFor(target: ReportTarget): ResolutionAction[] {
 }
 ```
 
-- [ ] **Step 4: Run the test**
+- [x] **Step 4: Run the test**
 
 ```bash
 npm run test:unit -- reasons
@@ -237,7 +237,7 @@ npm run test:unit -- reasons
 
 Expected: 8 passing.
 
-- [ ] **Step 5: Mutation-test**
+- [x] **Step 5: Mutation-test**
 
 | Mutation | Test that must go red |
 | --- | --- |
@@ -246,7 +246,7 @@ Expected: 8 passing.
 | `isReportReason` compares case-insensitively | "recognises which strings are reasons" |
 | `labelForReason` returns `""` instead of the raw value | "labels a known reason and falls back to the raw value" |
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/domain/reports/
@@ -274,7 +274,7 @@ EOF
 - Create: `supabase/migrations/20260811000014_moderation.sql`
 - Test: `tests/db/moderation.test.ts`
 
-- [ ] **Step 1: Record the exact `spot_by_slug` signature before touching it**
+- [x] **Step 1: Record the exact `spot_by_slug` signature before touching it**
 
 ```bash
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH"
@@ -284,7 +284,7 @@ docker exec supabase_db_photospots psql -U postgres -d postgres -tAc \
 
 You are adding `created_by` and `owner_profile_id` to its return type, which means dropping it. A `create or replace` that changes only the *return* type fails outright ("cannot change return type of existing function"), so this one will not silently overload — but the drop still discards the grants, which must be rewritten. Copy the existing body out of `20260810000007_explore.sql` rather than reconstructing it.
 
-- [ ] **Step 2: Write the failing test**
+- [x] **Step 2: Write the failing test**
 
 Create `tests/db/moderation.test.ts`:
 
@@ -557,7 +557,7 @@ describe("spot_by_slug after the signature change", () => {
 });
 ```
 
-- [ ] **Step 3: Run it and watch it fail**
+- [x] **Step 3: Run it and watch it fail**
 
 ```bash
 npm run test:db -- moderation
@@ -565,7 +565,7 @@ npm run test:db -- moderation
 
 Expected: every `resolve_report` and `admin_report_queue` test fails with `PGRST202` (function not found), and the two `spot_by_slug` property tests fail because the columns are absent. The "refuses a caller who is not an admin" test may pass for the wrong reason — a missing function refuses everyone — so do not read that one as signal yet.
 
-- [ ] **Step 4: Write the migration**
+- [x] **Step 4: Write the migration**
 
 Create `supabase/migrations/20260811000014_moderation.sql`:
 
@@ -790,7 +790,7 @@ revoke execute on function public.spot_by_slug(text) from public;
 grant execute on function public.spot_by_slug(text) to anon, authenticated, service_role;
 ```
 
-- [ ] **Step 5: Apply, audit for overloads, and run the test**
+- [x] **Step 5: Apply, audit for overloads, and run the test**
 
 ```bash
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH" && npx supabase db reset && npm run seed
@@ -808,7 +808,7 @@ npm run test:db -- moderation
 
 Expected: 17 passing. Run the whole database project too — `spot_by_slug` changed shape and `app/data/spots.ts` maps it.
 
-- [ ] **Step 6: Mutation-test**
+- [x] **Step 6: Mutation-test**
 
 | Mutation | Test that must go red |
 | --- | --- |
@@ -833,7 +833,7 @@ docker exec supabase_db_photospots psql -U postgres -d postgres -tAc \
   "select prosrc like '%then ''removed'' else ''removed''%' from pg_proc where proname='resolve_report';"
 ```
 
-- [ ] **Step 7: Commit**
+- [x] **Step 7: Commit**
 
 ```bash
 git add supabase/migrations/20260811000014_moderation.sql tests/db/moderation.test.ts
@@ -873,7 +873,7 @@ EOF
 - Create: `app/data/reports.ts`
 - Test: `tests/db/reports-data.test.ts`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Create `tests/db/reports-data.test.ts`. Build the same shape of fixture as task 2 — promote an admin via `serviceClient`, insert a spot owned by the author — but **name the spot `Report Target`**, which is what the assertions below expect. Then:
 
@@ -1056,7 +1056,7 @@ describe("resolveReport", () => {
 });
 ```
 
-- [ ] **Step 2: Run it, watch it fail, then write `app/data/reports.ts`**
+- [x] **Step 2: Run it, watch it fail, then write `app/data/reports.ts`**
 
 ```ts
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -1157,7 +1157,7 @@ export async function resolveReport(
 }
 ```
 
-- [ ] **Step 3: Run, then mutation-test**
+- [x] **Step 3: Run, then mutation-test**
 
 | Mutation | Test that must go red |
 | --- | --- |
@@ -1165,7 +1165,7 @@ export async function resolveReport(
 | `if (error) throw error` → `if (false) …` in `listReportQueue` | "throws for a non-admin rather than returning an empty queue" |
 | `note?.trim() \|\| null` → `note` | add a test for a whitespace-only note if none goes red |
 
-- [ ] **Step 4: Clean up after the fixture, and sweep the strays**
+- [x] **Step 4: Clean up after the fixture, and sweep the strays**
 
 The database currently holds 10 reports left by the existing suite. Delete the ones this file creates in `afterAll`, then check nothing else leaks:
 
@@ -1177,7 +1177,7 @@ Run it before and after `npm run test:db`. The two numbers must match.
 
 **They did not: three reports leaked**, from `rls.test.ts` and `schema-signals.test.ts`. The cause is worth knowing, because it is not the obvious one — `reports.target_id` is polymorphic with no foreign key, so deleting the spot does not cascade, *and* `reports.profile_id` is `ON DELETE SET NULL`, so deleting the reporter orphans the row rather than removing it. A fixture that cleans up its spot and its users still leaves its reports behind. Note also that `schema-signals.test.ts` reports against a second spot it cleans up inline, not the one its `afterAll` deletes.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/data/reports.ts tests/db/reports-data.test.ts
@@ -1205,7 +1205,7 @@ EOF
 - Create: `app/components/spot/ReportButton.tsx`, `app/components/spot/ReportButton.test.tsx`
 - Modify: `app/routes/spots.$slug.tsx`
 
-- [ ] **Step 1: Write the failing component test**
+- [x] **Step 1: Write the failing component test**
 
 Export and test the pure parts — the unit project runs in `node` with no DOM, so components are tested through their exported helpers, as `VotePanel` and `SpotCard` are.
 
@@ -1262,7 +1262,7 @@ describe("reportConfirmation", () => {
 });
 ```
 
-- [ ] **Step 2: Implement `ReportButton.tsx`**
+- [x] **Step 2: Implement `ReportButton.tsx`**
 
 The pure helpers first, since the action is a public endpoint and both the target type and the reason have to be validated there rather than trusted from the form:
 
@@ -1359,21 +1359,21 @@ export function ReportButton({
 
 Render one on the spot itself, one per comment, and one per photo — spec §4.3 makes the photo takedown path non-negotiable, and it is the same component with a different `targetType`.
 
-- [ ] **Step 3: Extend the route action**
+- [x] **Step 3: Extend the route action**
 
 Add a `case "report"` to the existing `intent` switch in `app/routes/spots.$slug.tsx`, calling `fileReport`. Return `{ ok: true, reported: true }` so the component can show the confirmation. Requires a signed-in profile, like voting and commenting.
 
-- [ ] **Step 4: Hide the edit link from people who cannot edit**
+- [x] **Step 4: Hide the edit link from people who cannot edit**
 
 `spot_by_slug` now returns `created_by` and `owner_profile_id`. Replace the current `{profile && <Link …>Edit this spot</Link>}` with a check that the viewer is the submitter, the listing owner, or an admin. This is the other half of the plan 5 finding: the action already refuses politely, and now the link stops appearing at all.
 
 The viewer's admin status is on `profile.role`, which `getCurrentProfile` already returns.
 
-- [ ] **Step 5: Verify in the browser**
+- [x] **Step 5: Verify in the browser**
 
 Sign in, report a comment, and confirm: the confirmation appears, a row lands in `reports` with `status = 'open'` attributed to you, and the comment is still visible (reporting is not moderation). Then check the edit link is gone on a spot you did not submit, and present on one you did.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add app/components/spot/ReportButton.tsx app/components/spot/ReportButton.test.tsx app/routes/spots.\$slug.tsx
@@ -1404,7 +1404,7 @@ EOF
 - Create: `app/routes/admin.tsx`, `app/components/admin/ReportRow.tsx`, `app/components/admin/ReportRow.test.tsx`
 - Modify: `app/routes.ts`, `app/app.css`
 
-- [ ] **Step 1: Write the failing component test**
+- [x] **Step 1: Write the failing component test**
 
 ```ts
 import { describe, it, expect } from "vitest";
@@ -1461,7 +1461,7 @@ describe("isActionable", () => {
 
 Note the last case: a report whose target is deleted cannot be hidden or removed, but must still be dismissable, so the row renders a dismiss button even when `isActionable` is false. Make that explicit in the component rather than implied.
 
-- [ ] **Step 2: Implement the row and the route**
+- [x] **Step 2: Implement the row and the route**
 
 `ReportRow` renders the summary, the note if there is one, and one `fetcher.Form` button per entry in `availableActions(report)` — which wraps `actionsFor` with the two cases that gate it: a closed report gets none, and a report whose target has been deleted gets only `dismiss`.
 
@@ -1506,13 +1506,13 @@ export async function loader({ request }: Route.LoaderArgs) {
 
 Add `route("admin", "routes/admin.tsx")` to `app/routes.ts`, and give the route an `ErrorBoundary` so the 403 renders as a sentence rather than a stack trace.
 
-- [ ] **Step 3: Verify by hand, as an admin and as a non-admin**
+- [x] **Step 3: Verify by hand, as an admin and as a non-admin**
 
 Promote a test user with `update profiles set role = 'admin'`, then: file a report as someone else, open `/admin`, confirm it appears, hide the spot, and confirm the spot disappears from the map and the report leaves the open list. Then open `/admin` as an ordinary user and confirm a 403 rather than an empty queue.
 
 Confirm the hidden spot's author can still see it (RLS gives them their own rows) but cannot edit it — `spots_update` requires `status = 'published'` for non-admins, which is what makes moderation stick.
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add app/routes/admin.tsx app/routes.ts app/components/admin/ app/app.css
@@ -1548,7 +1548,7 @@ EOF
 
 `claim_studio()` has existed since plan 1, is granted to `authenticated`, and has never had a caller. Spec §9.3: verification is against the listing's `contact_email`, and the caller must have that address confirmed on their own auth account.
 
-- [ ] **Step 1: Write the failing database test**
+- [x] **Step 1: Write the failing database test**
 
 Cover, using two test users and a studio spot with `studio_details.contact_email` set to one of their addresses:
 
@@ -1597,7 +1597,7 @@ it("cannot be done by writing the column directly", async () => {
 });
 ```
 
-- [ ] **Step 2: Write `app/data/studios.ts`**
+- [x] **Step 2: Write `app/data/studios.ts`**
 
 ```ts
 import type { SupabaseClient } from "@supabase/supabase-js";
@@ -1673,7 +1673,7 @@ export function hourlyRateLabel(cents: number | null): string | null {
 
 Note `maybeSingle()` rather than `single()`: an outdoor spot has no `studio_details` row, and `single()` treats that as a `PGRST116` error rather than an answer.
 
-- [ ] **Step 3: Build `/studios/:slug`**
+- [x] **Step 3: Build `/studios/:slug`**
 
 Spec §8: the studio page is the spot page plus rate, booking link, and the claim flow. Reuse `getSpotBySlug`; add the studio fields. Show the claim control only when the listing is unclaimed and the viewer is signed in, and surface the mismatch error in words rather than the raw exception.
 
@@ -1681,11 +1681,11 @@ Spec §8: the studio page is the spot page plus rate, booking link, and the clai
 
 Add `route("studios/:slug", "routes/studios.$slug.tsx")` to `app/routes.ts`.
 
-- [ ] **Step 4: Verify the claim end to end**
+- [x] **Step 4: Verify the claim end to end**
 
 Create a studio spot with `contact_email` set to a Mailpit address you can sign in as, sign in through the magic-link flow, claim it, and confirm both `studio_details.claimed_by` and `spots.owner_profile_id` are set. Then confirm the claim control is gone and the listing is editable by the new owner — `spots_update` allows `owner_profile_id = auth.uid()`.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add app/data/studios.ts app/routes/studios.\$slug.tsx app/routes.ts tests/db/studios-data.test.ts
@@ -1711,13 +1711,13 @@ EOF
 - Modify: `docs/STATUS.md`, `README.md`, this plan
 - Possibly modify: `docs/ENGINEERING-NOTES.md`
 
-- [ ] **Step 1: Full suite, typecheck, build**
+- [x] **Step 1: Full suite, typecheck, build**
 
 ```bash
 npm test && npm run typecheck && npm run build
 ```
 
-- [ ] **Step 2: Replay every migration from empty, and audit for overloads**
+- [x] **Step 2: Replay every migration from empty, and audit for overloads**
 
 ```bash
 export PATH="/Applications/Docker.app/Contents/Resources/bin:$PATH" && npx supabase db reset && npm run seed && npm run test:db
@@ -1729,7 +1729,7 @@ docker exec supabase_db_photospots psql -U postgres -d postgres -c \
 
 Expected: clean replay, and no rows from the overload query. This plan drops and recreates `spot_by_slug`, so that check is not ceremonial.
 
-- [ ] **Step 3: Confirm no test file leaks reports**
+- [x] **Step 3: Confirm no test file leaks reports**
 
 ```bash
 docker exec supabase_db_photospots psql -U postgres -d postgres -tAc "select count(*) from public.reports;"
@@ -1739,25 +1739,25 @@ docker exec supabase_db_photospots psql -U postgres -d postgres -tAc "select cou
 
 The two numbers must match.
 
-- [ ] **Step 4: Drive the whole trust flow in the browser**
+- [x] **Step 4: Drive the whole trust flow in the browser**
 
 As an ordinary user: report a spot and a comment. As an admin: open `/admin`, dismiss one, hide the spot behind the other, and confirm the spot leaves the map. As the spot's author: confirm you can still see it, cannot edit it, and are told why. As a studio owner: claim a listing and confirm it becomes editable.
 
-- [ ] **Step 5: Update `docs/STATUS.md`**
+- [x] **Step 5: Update `docs/STATUS.md`**
 
 Move milestone 6 to ✅ — **the MVP is then complete**, so rewrite the "Next" section as what comes after the milestones rather than a seventh one: the cold-start seeding work in spec §14, the hosted Supabase deploy still listed under Blocked, and the deferred items already recorded. Update the test count, the migration count, and the `app/` inventory.
 
 Remove from "Known gaps" the entry about the edit link being offered to everyone; task 4 closes it.
 
-- [ ] **Step 6: Update `README.md`** in the same voice as the existing entries.
+- [x] **Step 6: Update `README.md`** in the same voice as the existing entries.
 
-- [ ] **Step 7: Sync this plan** — tick every checkbox and add a "What diverged" table, as plans 4 and 5 do.
+- [x] **Step 7: Sync this plan** — tick every checkbox and add a "What diverged" table, as plans 4 and 5 do.
 
-- [ ] **Step 8: Add any new trap to `docs/ENGINEERING-NOTES.md`**
+- [x] **Step 8: Add any new trap to `docs/ENGINEERING-NOTES.md`**
 
 Only if this plan hit a real one. The likeliest candidate is already half-written there: **an application role is not a database role**, so a column grant cannot express "admins only" and the only honest options are a `security definer` function or a policy — with the trade-off that the function bypasses RLS and must re-check `is_admin()` itself. Add it if it bit; do not add anything merely anticipated.
 
-- [ ] **Step 9: Commit**
+- [x] **Step 9: Commit**
 
 ```bash
 git add docs/ README.md
@@ -1772,6 +1772,22 @@ Co-Authored-By: Claude Opus 5 <noreply@anthropic.com>
 EOF
 )"
 ```
+
+---
+
+## What diverged from the plan as written
+
+Code blocks above were re-synced to the committed files. The changes worth naming:
+
+| Where | What the plan said | What was built, and why |
+| --- | --- | --- |
+| Task 2 | `p_action::public.spot_status` | The actions are `hide`/`remove`; the enum values are `hidden`/`removed`. A direct cast raises `22P02`, so the action is mapped to the status first. |
+| Task 2 | `set status = case … end` | A `CASE` over text literals assigned to an enum column is `42804`, not an implicit cast. The cast is written out. |
+| Task 2 | Mutation table as given | The harness was lying: `psql` exits 0 on a failed statement unless `ON_ERROR_STOP` is set, so an invalid mutation left the original function installed and looked like a survivor. `hide → removed` was reported as surviving and does not. Verify against `pg_proc.prosrc`. |
+| Task 2 | "refuses to hide a comment" asserts an error | The guard only improves the *message* — `'hidden'::content_status` raises anyway — so the test asserts the sentence an admin reads, not that something threw. |
+| Task 3 | Report-leak check "if they do not, find the file" | They did not. Three reports leaked from two files, for a reason neither obvious nor predicted: `target_id` is polymorphic with no FK so deleting the spot does not cascade, *and* `profile_id` is `ON DELETE SET NULL` so deleting the reporter orphans the row. |
+| Task 5 | Tests point at `rpcs.test.ts`'s `create_spot` block | No such block exists; `createSpot` is exercised through `spot-writes.test.ts`. |
+| Task 6 | `err instanceof Error ? err.message : ""` | False for every `PostgrestError`, so all three claim refusals collapsed into the generic message. Only visible by driving the form — `rejects.toThrow` inspects `message` regardless of prototype. |
 
 ---
 

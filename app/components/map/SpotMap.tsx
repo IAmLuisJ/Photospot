@@ -1,8 +1,18 @@
 import { useEffect, useRef } from "react";
 // maplibre-gl v6 dropped the default export; these are named.
-import { Map as MapLibreMap, Marker, NavigationControl } from "maplibre-gl";
+import {
+  Map as MapLibreMap,
+  Marker,
+  NavigationControl,
+  setWorkerUrl,
+} from "maplibre-gl";
+import mapWorkerUrl from "maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url";
 import type { Bounds } from "~/domain/geo/bounds";
 import type { SpotSummary } from "~/data/spots";
+
+// Vite must emit the module worker as an asset; MapLibre's relative default
+// URL would otherwise request an unbundled file that does not exist in production.
+setWorkerUrl(mapWorkerUrl);
 
 export interface SpotMarker {
   id: string;

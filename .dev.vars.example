@@ -1,0 +1,10 @@
+# Copy to .dev.vars; never commit populated secrets.
+# Generate: node -e 'console.log(require("node:crypto").randomBytes(32).toString("base64url"))'
+BETTER_AUTH_SECRET=
+
+# Optional Google sign-in: configure both or leave both blank.
+GOOGLE_CLIENT_ID=
+GOOGLE_CLIENT_SECRET=
+
+# Optional magic links: also set AUTH_EMAIL_FROM in .env.
+RESEND_API_KEY=

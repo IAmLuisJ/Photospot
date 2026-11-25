@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { DataContext } from "./context";
 
 export interface Profile {
   id: string;
@@ -10,7 +10,8 @@ export interface Profile {
   instagram: string | null;
 }
 
-const COLUMNS = "id, display_name, role, avatar_url, bio, website_url, instagram";
+const COLUMNS =
+  "id, display_name, role, avatar_url, bio, website_url, instagram";
 
 interface ProfileRow {
   id: string;
@@ -34,23 +35,18 @@ const toProfile = (row: ProfileRow): Profile => ({
 });
 
 export async function getProfile(
-  supabase: SupabaseClient,
+  context: DataContext,
   id: string,
 ): Promise<Profile | null> {
-  const { data, error } = await supabase
-    .from("profiles")
-    .select(COLUMNS)
-    .eq("id", id)
-    .maybeSingle();
-
-  if (error) throw error;
-  return data ? toProfile(data as ProfileRow) : null;
+  const row = await context.db
+    .prepare(`SELECT ${COLUMNS} FROM profiles WHERE id=?`)
+    .bind(id)
+    .first<ProfileRow>();
+  return row ? toProfile(row) : null;
 }
 
 export async function getCurrentProfile(
-  supabase: SupabaseClient,
+  context: DataContext,
 ): Promise<Profile | null> {
-  const { data } = await supabase.auth.getUser();
-  if (!data.user) return null;
-  return getProfile(supabase, data.user.id);
+  return context.viewer ? getProfile(context, context.viewer.id) : null;
 }

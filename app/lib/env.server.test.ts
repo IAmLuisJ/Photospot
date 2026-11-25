@@ -1,50 +1,57 @@
 import { describe, it, expect } from "vitest";
 import { readEnv, DEFAULT_MAP_STYLE_URL } from "./env.server";
-
 const valid = {
-  SUPABASE_URL: "http://127.0.0.1:54321",
-  SUPABASE_ANON_KEY: "anon-key",
+  AUTH_ORIGIN: "http://localhost:5173",
+  BETTER_AUTH_SECRET: "test-secret-at-least-thirty-two-characters-long",
 };
-
-describe("readEnv", () => {
-  it("returns the parsed values", () => {
-    expect(readEnv(valid)).toEqual({
-      supabaseUrl: "http://127.0.0.1:54321",
-      supabaseAnonKey: "anon-key",
+describe("Worker environment", () => {
+  it("allows browsing without OAuth or mail credentials", () => {
+    expect(readEnv(valid)).toMatchObject({
+      authOrigin: "http://localhost:5173",
       mapStyleUrl: DEFAULT_MAP_STYLE_URL,
+      googleClientId: undefined,
+      resendApiKey: undefined,
     });
   });
-
-  it("names the missing variable so the failure is actionable", () => {
-    expect(() => readEnv({ SUPABASE_URL: "http://x" })).toThrow(/SUPABASE_ANON_KEY/);
+  it("names a missing auth secret and rejects short secrets", () => {
+    expect(() => readEnv({ AUTH_ORIGIN: valid.AUTH_ORIGIN })).toThrow(
+      /BETTER_AUTH_SECRET/,
+    );
+    expect(() => readEnv({ ...valid, BETTER_AUTH_SECRET: "short" })).toThrow(
+      /BETTER_AUTH_SECRET/,
+    );
   });
-
-  it("rejects a malformed URL", () => {
-    expect(() => readEnv({ ...valid, SUPABASE_URL: "not-a-url" })).toThrow();
+  it("requires HTTPS for a deployed origin and forbids origin paths", () => {
+    expect(() =>
+      readEnv({ ...valid, AUTH_ORIGIN: "http://photos.example.com" }),
+    ).toThrow(/HTTPS/);
+    expect(() =>
+      readEnv({ ...valid, AUTH_ORIGIN: "https://photos.example.com/path" }),
+    ).toThrow(/origin/i);
+    expect(
+      readEnv({ ...valid, AUTH_ORIGIN: "https://photos.example.com/" })
+        .authOrigin,
+    ).toBe("https://photos.example.com");
   });
-
-  it("accepts a custom map style", () => {
-    const env = readEnv({ ...valid, MAP_STYLE_URL: "https://tiles.example/style.json" });
-    expect(env.mapStyleUrl).toBe("https://tiles.example/style.json");
+  it("requires OAuth client ID and secret together", () => {
+    expect(() => readEnv({ ...valid, GOOGLE_CLIENT_ID: "id" })).toThrow(/both/);
+    expect(
+      readEnv({ ...valid, GOOGLE_CLIENT_ID: "", GOOGLE_CLIENT_SECRET: "" })
+        .googleClientId,
+    ).toBeUndefined();
   });
-
-  it("rejects a malformed map style URL rather than silently falling back", () => {
-    expect(() => readEnv({ ...valid, MAP_STYLE_URL: "nonsense" })).toThrow();
-  });
-
-  // Optional on purpose: readEnv runs in every loader, so requiring it would
-  // take the whole site down where it is absent rather than only the paths
-  // that write derived columns. createSupabaseAdminClient does the refusing.
-  it("accepts a missing service role key, which only the write path needs", () => {
-    expect(readEnv(valid).supabaseServiceRoleKey).toBeUndefined();
-  });
-
-  it("carries the service role key through when it is set", () => {
-    const env = readEnv({ ...valid, SUPABASE_SERVICE_ROLE_KEY: "service" });
-    expect(env.supabaseServiceRoleKey).toBe("service");
-  });
-
-  it("rejects an empty service role key instead of treating it as absent", () => {
-    expect(() => readEnv({ ...valid, SUPABASE_SERVICE_ROLE_KEY: "" })).toThrow();
+  it("accepts custom map styles and treats blank development values as absent", () => {
+    expect(
+      readEnv({
+        ...valid,
+        MAP_STYLE_URL: "https://tiles.example.com/style.json",
+      }).mapStyleUrl,
+    ).toBe("https://tiles.example.com/style.json");
+    expect(readEnv({ ...valid, MAP_STYLE_URL: "" }).mapStyleUrl).toBe(
+      DEFAULT_MAP_STYLE_URL,
+    );
+    expect(() => readEnv({ ...valid, MAP_STYLE_URL: "nonsense" })).toThrow(
+      /MAP_STYLE_URL/,
+    );
   });
 });

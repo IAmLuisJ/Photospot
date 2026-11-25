@@ -1,8 +1,7 @@
 // `data()` rather than Response.json: it carries headers AND keeps the loader
 // return type inferable, which is what makes `data` available in meta().
 import { Link, data as routeData } from "react-router";
-import { createSupabaseServerClient, createSupabaseAdminClient } from "~/lib/supabase.server";
-import { readEnv } from "~/lib/env.server";
+import { getRequestContext } from "~/lib/request-context.server";
 import { getSpotBySlug, getSpotMedia, type SpotDetail } from "~/data/spots";
 import { photoUrl } from "~/lib/photo-url";
 import { getCurrentProfile } from "~/data/profiles";
@@ -25,13 +24,16 @@ import type { Route } from "./+types/spots.$slug";
 // because this route has an ErrorBoundary, so meta() also runs for the 404.
 export function meta({ loaderData }: Route.MetaArgs) {
   const spot = loaderData?.spot;
-  return [{ title: spot ? `${spot.name} — Photospots` : "Spot not found — Photospots" }];
+  return [
+    {
+      title: spot ? `${spot.name} — Photospots` : "Spot not found — Photospots",
+    },
+  ];
 }
 
-export async function loader({ request, params }: Route.LoaderArgs) {
-  const { supabase, headers } = createSupabaseServerClient(request);
-  const env = readEnv();
-  const spot = await getSpotBySlug(supabase, params.slug);
+export async function loader({ request, params, context }: Route.LoaderArgs) {
+  const { store, headers, env } = await getRequestContext(request, context);
+  const spot = await getSpotBySlug(store, params.slug);
 
   if (!spot) {
     // 404 rather than an empty page, so an unpublished or renamed spot is not
@@ -40,15 +42,15 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   }
 
   const [media, profile] = await Promise.all([
-    getSpotMedia(supabase, spot.id),
-    getCurrentProfile(supabase),
+    getSpotMedia(store, spot.id),
+    getCurrentProfile(store),
   ]);
 
   // Second round: the viewer's own votes need the profile id from the first.
   const [shootTypeVotes, viewerShootAgain, comments] = await Promise.all([
-    getShootTypeVotes(supabase, spot.id),
-    getViewerShootAgain(supabase, spot.id, profile?.id ?? null),
-    listComments(supabase, spot.id),
+    getShootTypeVotes(store, spot.id),
+    getViewerShootAgain(store, spot.id, profile?.id ?? null),
+    listComments(store, spot.id),
   ]);
 
   return routeData(
@@ -56,7 +58,7 @@ export async function loader({ request, params }: Route.LoaderArgs) {
       spot,
       media,
       profile,
-      supabaseUrl: env.supabaseUrl,
+      photoBaseUrl: env.authOrigin,
       shootTypeVotes,
       shootAgain: {
         yesCount: spot.shootAgainYesCount,
@@ -69,15 +71,18 @@ export async function loader({ request, params }: Route.LoaderArgs) {
   );
 }
 
-export async function action({ request, params }: Route.ActionArgs) {
-  const { supabase, headers } = createSupabaseServerClient(request);
-  const profile = await getCurrentProfile(supabase);
+export async function action({ request, params, context }: Route.ActionArgs) {
+  const { store, headers, env } = await getRequestContext(request, context);
+  const profile = await getCurrentProfile(store);
   // Voting and commenting require an account; browsing never does (spec §4.6).
   if (!profile) {
-    return routeData({ error: "Sign in to vote or comment." }, { headers, status: 401 });
+    return routeData(
+      { error: "Sign in to vote or comment." },
+      { headers, status: 401 },
+    );
   }
 
-  const spot = await getSpotBySlug(supabase, params.slug);
+  const spot = await getSpotBySlug(store, params.slug);
   if (!spot) throw new Response("Not found", { status: 404, headers });
 
   const form = await request.formData();
@@ -89,43 +94,67 @@ export async function action({ request, params }: Route.ActionArgs) {
       case "unvote": {
         const shootTypeId = Number(form.get("shootTypeId"));
         if (!Number.isInteger(shootTypeId)) {
-          return routeData({ error: "Unknown shoot type." }, { headers, status: 400 });
+          return routeData(
+            { error: "Unknown shoot type." },
+            { headers, status: 400 },
+          );
         }
-        const ref = { spotId: spot.id, kind: "shoot_type_upvote" as const, shootTypeId };
-        if (intent === "upvote") await castSignal(supabase, ref, 1);
-        else await retractSignal(supabase, ref);
+        const ref = {
+          spotId: spot.id,
+          kind: "shoot_type_upvote" as const,
+          shootTypeId,
+        };
+        if (intent === "upvote") await castSignal(store, ref, 1);
+        else await retractSignal(store, ref);
         break;
       }
       case "shoot-again": {
-        const ref = { spotId: spot.id, kind: "shoot_again" as const, shootTypeId: null };
+        const ref = {
+          spotId: spot.id,
+          kind: "shoot_again" as const,
+          shootTypeId: null,
+        };
         const answer = String(form.get("answer") ?? "");
-        if (answer === "retract") await retractSignal(supabase, ref);
-        else if (answer === "yes") await castSignal(supabase, ref, 1);
-        else if (answer === "no") await castSignal(supabase, ref, 0);
-        else return routeData({ error: "Unknown answer." }, { headers, status: 400 });
+        if (answer === "retract") await retractSignal(store, ref);
+        else if (answer === "yes") await castSignal(store, ref, 1);
+        else if (answer === "no") await castSignal(store, ref, 0);
+        else
+          return routeData(
+            { error: "Unknown answer." },
+            { headers, status: 400 },
+          );
         break;
       }
       case "comment": {
         const body = String(form.get("body") ?? "");
         const { errors } = validateComment(body);
         if (errors.length > 0) {
-          return routeData({ error: errors[0].message }, { headers, status: 400 });
+          return routeData(
+            { error: errors[0].message },
+            { headers, status: 400 },
+          );
         }
-        await addComment(supabase, spot.id, body, profile.id);
+        await addComment(store, spot.id, body, profile.id);
         break;
       }
       case "report": {
         const report = reportIntentFrom(form);
         if (!report) {
-          return routeData({ error: "That report was not understood." }, { headers, status: 400 });
+          return routeData(
+            { error: "That report was not understood." },
+            { headers, status: 400 },
+          );
         }
-        await fileReport(supabase, { ...report, profileId: profile.id });
+        await fileReport(store, { ...report, profileId: profile.id });
         // Returned early: a report changes no counter, so there is no derived
         // score to refresh below.
         return routeData({ ok: true, reported: true }, { headers });
       }
       default:
-        return routeData({ error: "Unknown action." }, { headers, status: 400 });
+        return routeData(
+          { error: "Unknown action." },
+          { headers, status: 400 },
+        );
     }
   } catch (err) {
     return routeData(
@@ -134,19 +163,14 @@ export async function action({ request, params }: Route.ActionArgs) {
     );
   }
 
-  // The write landed; the derived score is what is left. spots.score is not
-  // writable by `authenticated` — it is the default sort order — so this needs
-  // the service-role client.
-  //
-  // A failure here must not be reported as a failed vote, because the vote
-  // succeeded. It must not be silent either: nothing else in the system would
-  // notice a score that had stopped moving.
+  // The contribution has committed. Refresh derived ranking separately so a
+  // refresh failure does not report a failed vote. Hourly maintenance repairs it.
   try {
-    await refreshSpotScore(createSupabaseAdminClient(), spot.id);
+    await refreshSpotScore(store.db, spot.id);
   } catch (err) {
     console.error(
       `Score refresh failed for spot ${spot.id}; the vote or comment was saved. ` +
-        "Run `npm run backfill:scores` to repair. Cause:",
+        "Scheduled maintenance will retry. Cause:",
       err,
     );
   }
@@ -169,7 +193,15 @@ const list = (values: string[] | null) =>
   values && values.length > 0 ? values.join(", ") : null;
 
 export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
-  const { spot, media, profile, supabaseUrl, shootTypeVotes, shootAgain, comments } = loaderData;
+  const {
+    spot,
+    media,
+    profile,
+    photoBaseUrl,
+    shootTypeVotes,
+    shootAgain,
+    comments,
+  } = loaderData;
   const place = [spot.locality, spot.region].filter(Boolean).join(", ");
 
   // Matches spots_update: the submitter, the listing owner, or an admin. The
@@ -189,7 +221,9 @@ export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
 
       <h1>{spot.name}</h1>
       {place && <p className="spot-detail__place">{place}</p>}
-      {spot.description && <p className="spot-detail__description">{spot.description}</p>}
+      {spot.description && (
+        <p className="spot-detail__description">{spot.description}</p>
+      )}
 
       <p className="spot-detail__signals">{voteTotalsLine(spot)}</p>
 
@@ -212,7 +246,9 @@ export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
         />
         <Detail
           label="Dog friendly"
-          value={spot.dogFriendly === null ? null : spot.dogFriendly ? "Yes" : "No"}
+          value={
+            spot.dogFriendly === null ? null : spot.dogFriendly ? "Yes" : "No"
+          }
         />
       </dl>
 
@@ -231,7 +267,7 @@ export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
             {media.photos.map((p) => (
               <li key={p.id}>
                 <img
-                  src={photoUrl(supabaseUrl, p.storagePath) ?? ""}
+                  src={photoUrl(photoBaseUrl, p.storagePath) ?? ""}
                   alt={p.caption ?? ""}
                   loading="lazy"
                 />
@@ -241,7 +277,11 @@ export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
                 </p>
                 {/* Spec §4.3: session photos show real families, so the
                     takedown path has to reach individual photos. */}
-                <ReportButton targetType="photo" targetId={p.id} signedIn={profile !== null} />
+                <ReportButton
+                  targetType="photo"
+                  targetId={p.id}
+                  signedIn={profile !== null}
+                />
               </li>
             ))}
           </ul>
@@ -265,7 +305,9 @@ export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
 
       {spot.kind === "studio" && (
         <p>
-          <Link to={`/studios/${spot.slug}`}>Rate, booking and ownership →</Link>
+          <Link to={`/studios/${spot.slug}`}>
+            Rate, booking and ownership →
+          </Link>
         </p>
       )}
 
@@ -275,9 +317,17 @@ export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
         </p>
       )}
 
-      <ReportButton targetType="spot" targetId={spot.id} signedIn={profile !== null} />
+      <ReportButton
+        targetType="spot"
+        targetId={spot.id}
+        signedIn={profile !== null}
+      />
 
-      <VotePanel rows={shootTypeVotes} shootAgain={shootAgain} signedIn={profile !== null} />
+      <VotePanel
+        rows={shootTypeVotes}
+        shootAgain={shootAgain}
+        signedIn={profile !== null}
+      />
 
       <CommentThread comments={comments} signedIn={profile !== null} />
     </main>

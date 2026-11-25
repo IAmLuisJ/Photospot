@@ -22,6 +22,22 @@ export interface ActivityEvent {
   occurredAt: Date;
 }
 
+/** Unrounded contribution, so paginated jobs round only the final total. */
+export function hotContribution(
+  { weight, occurredAt }: ActivityEvent,
+  now: Date,
+  halfLifeDays = HOT_HALF_LIFE_DAYS,
+  windowDays = HOT_WINDOW_DAYS,
+): number {
+  const ageDays = Math.max(
+    0,
+    (now.getTime() - occurredAt.getTime()) / MS_PER_DAY,
+  );
+  return ageDays > windowDays
+    ? 0
+    : weight * Math.pow(0.5, ageDays / halfLifeDays);
+}
+
 export function computeHotScore(
   events: readonly ActivityEvent[],
   now: Date,
@@ -30,12 +46,8 @@ export function computeHotScore(
 ): number {
   let total = 0;
 
-  for (const { weight, occurredAt } of events) {
-    // Clock skew must not let an event count for more than its face value.
-    const ageDays = Math.max(0, (now.getTime() - occurredAt.getTime()) / MS_PER_DAY);
-    if (ageDays > windowDays) continue;
-    total += weight * Math.pow(0.5, ageDays / halfLifeDays);
-  }
+  for (const event of events)
+    total += hotContribution(event, now, halfLifeDays, windowDays);
 
   return Math.round(total * 1000) / 1000;
 }

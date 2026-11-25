@@ -258,26 +258,26 @@
 
 <div class="wrap">
   <header class="masthead">
-    <p class="eyebrow">Photospots · launch tracker · 11 Aug 2026</p>
-    <h1>The application is finished. Nothing is live yet.</h1>
+    <p class="eyebrow">Photospots · launch tracker · 25 Nov 2026</p>
+    <h1>Workers refactor implemented. Production setup remains.</h1>
     <p class="standfirst">
-      All six milestones are done. What stands between this and a first user is one unrun
-      command, a map-tile account, and forty photographs — none of which is code.
+      The application now targets Workers, D1, private R2 and Better Auth. Launch still requires
+      production resources, provider credentials, any existing-data cutover, map tiles and real photos.
     </p>
   </header>
 
   <div class="tiles">
     <div class="tile tile--go">
-      <span class="tile__value">509</span>
-      <span class="tile__label">tests passing, 52 files</span>
+      <span class="tile__value">Unit + D1</span>
+      <span class="tile__label">plus a production Worker HTTP smoke test</span>
     </div>
     <div class="tile">
       <span class="tile__value">6<span style="color: var(--slate); font-size: 0.6em"> of 6</span></span>
       <span class="tile__label">MVP milestones complete</span>
     </div>
     <div class="tile">
-      <span class="tile__value">14</span>
-      <span class="tile__label">migrations, replayed clean</span>
+      <span class="tile__value">3</span>
+      <span class="tile__label">D1 migrations, applied locally</span>
     </div>
     <div class="tile tile--blocked">
       <span class="tile__value">4</span>
@@ -297,7 +297,7 @@
           <span class="milestone__no">01</span>
           <span class="milestone__body">
             <span class="milestone__name">Foundation</span>
-            <span class="milestone__detail">Schema, row-level security, auth, the pure domain layer.</span>
+            <span class="milestone__detail">D1 schema, server authorization, Better Auth and pure domain rules.</span>
           </span>
           <span class="chip chip--done">Done</span>
         </li>
@@ -359,33 +359,30 @@
         <ul class="items">
           <li class="item">
             <div>
-              <div class="item__title">Run <code>npx supabase login</code></div>
+              <div class="item__title">Create production D1 and private R2 resources</div>
               <p class="item__why">
-                Never run, so there is no hosted project. Everything below waits on it — and with
-                placeholder credentials the deployed homepage is a 500, not a degraded map,
-                because the home loader queries the database on every request.
+                The source refactor does not create or change production resources. Follow
+                <code>docs/CLOUDFLARE.md</code> and use the returned D1 UUID in deployment configuration.
               </p>
             </div>
             <span class="chip chip--blocked">Blocking</span>
           </li>
           <li class="item">
             <div>
-              <div class="item__title">Create the project and push all 14 migrations</div>
+              <div class="item__title">Apply D1 migrations and rehearse any legacy import</div>
               <p class="item__why">
-                <code>supabase db push</code>. They replay clean from empty locally, which is the
-                check that they will apply at all.
+                Apply the three active SQLite migrations. Preserve user IDs and copy photo objects
+                before switching traffic; existing Supabase sessions require a fresh sign-in.
               </p>
             </div>
             <span class="chip chip--todo">Waiting</span>
           </li>
           <li class="item">
             <div>
-              <div class="item__title">Set three environment variables on Vercel</div>
+              <div class="item__title">Configure the public origin and Worker secrets</div>
               <p class="item__why">
-                <code>SUPABASE_URL</code>, <code>SUPABASE_ANON_KEY</code>, and —
-                easily missed — <code>SUPABASE_SERVICE_ROLE_KEY</code>. Voting and commenting
-                need the third: <code>spots.score</code> is deliberately not writable by ordinary
-                users, so the server refreshes it with the service role.
+                Set <code>AUTH_ORIGIN</code>, a stable <code>BETTER_AUTH_SECRET</code>, and the
+                enabled Google/Resend credentials. Configure OAuth callbacks and a verified sender.
               </p>
             </div>
             <span class="chip chip--todo">Waiting</span>
@@ -525,10 +522,8 @@
 
   <footer>
     <p>
-      Merged to <code>main</code> and deployed on 12 Aug 2026. Live at
-      <code>photospots.vercel.app</code>, where the homepage currently returns 500 on placeholder
-      Supabase credentials; <code>/auth/login</code> serves normally. The per-deployment URLs sit
-      behind Vercel deployment protection.
+      Cloudflare refactor changes remain in the existing checkout. This implementation has not
+      provisioned production resources, imported production data or deployed a Worker.
     </p>
     <p>
       Detail lives in <code>docs/STATUS.md</code>; the traps this codebase has already hit are in

@@ -1,6 +1,9 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { isReportReason, type ReportTarget, type ResolutionAction } from "../domain/reports/reasons";
-
+import {
+  isReportReason,
+  type ReportTarget,
+  type ResolutionAction,
+} from "../domain/reports/reasons";
+import { requireAdmin, requireViewer, type DataContext } from "./context";
 export interface NewReport {
   targetType: ReportTarget;
   targetId: string;
@@ -8,12 +11,10 @@ export interface NewReport {
   note: string | null;
   profileId: string;
 }
-
 export interface QueuedReport {
   id: string;
   targetType: ReportTarget;
   targetId: string;
-  /** Null when the target has been deleted — the report is still dismissable. */
   targetTitle: string | null;
   targetStatus: string | null;
   reason: string;
@@ -21,76 +22,117 @@ export interface QueuedReport {
   status: "open" | "resolved" | "dismissed";
   createdAt: string;
 }
+const TARGET_TABLES = {
+  spot: "spots",
+  photo: "photos",
+  comment: "comments",
+} as const;
 
-/**
- * `profile_id` is checked by RLS (`reports_insert with check (profile_id =
- * auth.uid())`), so passing someone else's id fails at the database rather
- * than being trusted here.
- *
- * The reason is validated before the insert because `reports.reason` is free
- * text in the schema — the database will happily store anything, and an
- * unrecognised value renders as itself in the queue forever.
- */
-export async function fileReport(supabase: SupabaseClient, report: NewReport): Promise<void> {
-  if (!isReportReason(report.reason)) {
-    throw new Error(`Unknown report reason: ${report.reason}`);
+export class ReportConflictError extends Error {
+  constructor() {
+    super(
+      "This report has already changed. Reload the queue before resolving it.",
+    );
   }
-
-  const { error } = await supabase.from("reports").insert({
-    target_type: report.targetType,
-    target_id: report.targetId,
-    profile_id: report.profileId,
-    reason: report.reason,
-    // A whitespace-only note is no note, not an empty string to store.
-    note: report.note?.trim() || null,
-  });
-
-  if (error) throw error;
 }
-
-interface QueueRow {
-  id: string;
-  target_type: ReportTarget;
-  target_id: string;
-  target_title: string | null;
-  target_status: string | null;
-  reason: string;
-  note: string | null;
-  status: "open" | "resolved" | "dismissed";
-  created_at: string;
+export async function fileReport(
+  context: DataContext,
+  report: NewReport,
+): Promise<void> {
+  const viewer = requireViewer(context);
+  if (report.profileId !== viewer.id)
+    throw new Error("Cannot file a report as another user.");
+  if (
+    !isReportReason(report.reason) ||
+    !Object.hasOwn(TARGET_TABLES, report.targetType)
+  )
+    throw new Error("Unknown report reason or target.");
+  const targetTable = TARGET_TABLES[report.targetType];
+  const visible =
+    report.targetType === "spot"
+      ? "target.status='published'"
+      : "target.status='published' AND EXISTS(SELECT 1 FROM spots WHERE id=target.spot_id AND status='published')";
+  const result = await context.db
+    .prepare(
+      `INSERT INTO reports(id,target_type,target_id,profile_id,reason,note)
+    SELECT ?,?,id,?,?,? FROM ${targetTable} target WHERE id=? AND ${visible}`,
+    )
+    .bind(
+      crypto.randomUUID(),
+      report.targetType,
+      viewer.id,
+      report.reason,
+      report.note?.trim() || null,
+      report.targetId,
+    )
+    .run();
+  if (!result.meta.changes) throw new Error("Report target not found.");
 }
-
-/**
- * Throws for a non-admin rather than returning an empty list: an empty queue
- * and a forbidden one look identical to a caller, and the difference is what
- * decides whether to render an admin surface at all.
- */
-export async function listReportQueue(supabase: SupabaseClient): Promise<QueuedReport[]> {
-  const { data, error } = await supabase.rpc("admin_report_queue");
-  if (error) throw error;
-
-  return ((data ?? []) as QueueRow[]).map((row) => ({
-    id: row.id,
-    targetType: row.target_type,
-    targetId: row.target_id,
-    targetTitle: row.target_title,
-    targetStatus: row.target_status,
-    reason: row.reason,
-    note: row.note,
-    status: row.status,
-    createdAt: row.created_at,
-  }));
+export async function listReportQueue(
+  context: DataContext,
+): Promise<QueuedReport[]> {
+  const viewer = requireAdmin(context);
+  return (
+    await context.db
+      .prepare(
+        `SELECT r.id,r.target_type AS targetType,r.target_id AS targetId,r.reason,r.note,r.status,r.created_at AS createdAt,
+    CASE r.target_type WHEN 'spot' THEN s.name WHEN 'photo' THEN p.storage_path WHEN 'comment' THEN substr(c.body,1,120) END AS targetTitle,
+    CASE r.target_type WHEN 'spot' THEN s.status WHEN 'photo' THEN p.status WHEN 'comment' THEN c.status END AS targetStatus
+    FROM reports r LEFT JOIN spots s ON r.target_type='spot' AND s.id=r.target_id
+    LEFT JOIN photos p ON r.target_type='photo' AND p.id=r.target_id LEFT JOIN comments c ON r.target_type='comment' AND c.id=r.target_id
+    WHERE EXISTS(SELECT 1 FROM profiles WHERE id=? AND role='admin') ORDER BY (r.status='open') DESC,r.created_at DESC,r.id`,
+      )
+      .bind(viewer.id)
+      .all<QueuedReport>()
+  ).results;
 }
-
-/** Target status and report closure move together — see migration 14. */
 export async function resolveReport(
-  supabase: SupabaseClient,
+  context: DataContext,
   reportId: string,
   action: ResolutionAction,
 ): Promise<void> {
-  const { error } = await supabase.rpc("resolve_report", {
-    p_report_id: reportId,
-    p_action: action,
-  });
-  if (error) throw error;
+  const viewer = requireAdmin(context);
+  if (!["hide", "remove", "dismiss"].includes(action))
+    throw new Error("Unknown resolution action.");
+  const report = await context.db
+    .prepare("SELECT target_type,target_id,status FROM reports WHERE id=?")
+    .bind(reportId)
+    .first<{ target_type: ReportTarget; target_id: string; status: string }>();
+  if (!report) throw new Error("No such report.");
+  if (report.status !== "open") throw new ReportConflictError();
+  if (action === "hide" && report.target_type !== "spot")
+    throw new Error("Only a spot can be hidden.");
+  const adminGuard =
+    "EXISTS(SELECT 1 FROM profiles WHERE id=? AND role='admin')";
+  if (action === "dismiss") {
+    const result = await context.db
+      .prepare(
+        `UPDATE reports SET status='dismissed',resolved_by=? WHERE id=? AND status='open' AND ${adminGuard}`,
+      )
+      .bind(viewer.id, reportId, viewer.id)
+      .run();
+    if (!result.meta.changes) throw new ReportConflictError();
+    return;
+  }
+  const table = TARGET_TABLES[report.target_type];
+  const status = action === "hide" ? "hidden" : "removed";
+  const target = await context.db
+    .prepare(`SELECT id FROM ${table} WHERE id=?`)
+    .bind(report.target_id)
+    .first();
+  if (!target) throw new Error("Target deleted; dismiss this report instead.");
+  const [, resolved] = await context.db.batch([
+    context.db
+      .prepare(
+        `UPDATE ${table} SET status=? WHERE id=? AND ${adminGuard} AND EXISTS(SELECT 1 FROM reports WHERE id=? AND status='open')`,
+      )
+      .bind(status, report.target_id, viewer.id, reportId),
+    context.db
+      .prepare(
+        `UPDATE reports SET status='resolved',resolved_by=? WHERE id=? AND status='open' AND ${adminGuard}
+      AND EXISTS(SELECT 1 FROM ${table} WHERE id=? AND status=?)`,
+      )
+      .bind(viewer.id, reportId, viewer.id, report.target_id, status),
+  ]);
+  if (!resolved.meta.changes) throw new ReportConflictError();
 }

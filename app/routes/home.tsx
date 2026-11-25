@@ -1,9 +1,12 @@
 import { useCallback, useMemo, useState } from "react";
 import { Form, Link, useSearchParams, data as routeData } from "react-router";
-import { createSupabaseServerClient } from "~/lib/supabase.server";
-import { readEnv } from "~/lib/env.server";
+import { getRequestContext } from "~/lib/request-context.server";
 import { getCurrentProfile } from "~/data/profiles";
-import { listSpotsInViewport, type SpotSummary } from "~/data/spots";
+import {
+  listSpotsInViewport,
+  listShootTypes,
+  type SpotSummary,
+} from "~/data/spots";
 import {
   parseExploreFilters,
   filtersToSearchParams,
@@ -15,11 +18,20 @@ import {
   type AttributeFilters,
 } from "~/domain/filters/attribute-filters";
 import { snapBoundsToGrid } from "~/domain/geo/bounds";
-import { resolveView, viewPreferenceCookie } from "~/lib/view-preference.server";
+import {
+  resolveView,
+  viewPreferenceCookie,
+} from "~/lib/view-preference.server";
 import { SpotMap } from "~/components/map/SpotMap";
 import { SpotCard } from "~/components/explore/SpotCard";
-import { ExploreLayout, photoDepthFor } from "~/components/explore/ExploreLayout";
-import { FilterBar, hiddenByFiltersMessage } from "~/components/explore/FilterBar";
+import {
+  ExploreLayout,
+  photoDepthFor,
+} from "~/components/explore/ExploreLayout";
+import {
+  FilterBar,
+  hiddenByFiltersMessage,
+} from "~/components/explore/FilterBar";
 import type { Route } from "./+types/home";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -28,22 +40,27 @@ export function meta() {
     { title: "Photospots — photography locations, mapped" },
     {
       name: "description",
-      content: "A map of photography locations, cultivated by local photographers.",
+      content:
+        "A map of photography locations, cultivated by local photographers.",
     },
   ];
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
-  const { supabase, headers } = createSupabaseServerClient(request);
-  const env = readEnv();
+export async function loader({ request, context }: Route.LoaderArgs) {
+  const { store, headers, env } = await getRequestContext(request, context);
   const url = new URL(request.url);
 
   // Read the raw parameter before parseExploreFilters normalises it: it turns
   // an absent view into "split", which is indistinguishable from an explicit
   // one and would override the remembered choice on every visit.
   const rawView = url.searchParams.get("view");
-  const remembered = await viewPreferenceCookie.parse(request.headers.get("Cookie"));
-  const view = resolveView(rawView, typeof remembered === "string" ? remembered : null);
+  const remembered = await viewPreferenceCookie.parse(
+    request.headers.get("Cookie"),
+  );
+  const view = resolveView(
+    rawView,
+    typeof remembered === "string" ? remembered : null,
+  );
   const filters = { ...parseExploreFilters(url.searchParams), view };
 
   // Written whenever the URL carried a view — which includes following someone
@@ -57,8 +74,8 @@ export async function loader({ request }: Route.LoaderArgs) {
   // as is: the view you last looked at is a reasonable thing to remember, and
   // the alternative costs a round trip on every view switch.
   //
-  // Appended to the headers createSupabaseServerClient returned rather than a
-  // fresh object: that one carries refreshed Supabase session cookies, and
+  // Appended to the headers getRequestContext returned rather than a
+  // fresh object: that one carries refreshed Better Auth session cookies, and
   // replacing it signs the user out on their next request.
   if (rawView !== null && rawView === view) {
     headers.append("Set-Cookie", await viewPreferenceCookie.serialize(view));
@@ -66,12 +83,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 
   // Snap before querying so small pans produce the identical bounding box and
   // the previous result can be reused (spec §10).
-  const snapped = { ...filters, viewport: snapBoundsToGrid(filters.viewport, filters.zoom) };
+  const snapped = {
+    ...filters,
+    viewport: snapBoundsToGrid(filters.viewport, filters.zoom),
+  };
 
   const [profile, spots, shootTypes] = await Promise.all([
-    getCurrentProfile(supabase),
-    listSpotsInViewport(supabase, snapped, photoDepthFor(filters.view)),
-    supabase.from("shoot_types").select("id, slug, label").order("sort_order"),
+    getCurrentProfile(store),
+    listSpotsInViewport(store, snapped, photoDepthFor(filters.view)),
+    listShootTypes(store),
   ]);
 
   // How many spots in view the attribute filters removed. Only worth a second
@@ -83,7 +103,7 @@ export async function loader({ request }: Route.LoaderArgs) {
   const unfilteredCount = hasAnyAttributeFilter(filters.attributes)
     ? (
         await listSpotsInViewport(
-          supabase,
+          store,
           { ...snapped, attributes: NO_ATTRIBUTE_FILTERS },
           photoDepthFor(filters.view),
         )
@@ -94,10 +114,10 @@ export async function loader({ request }: Route.LoaderArgs) {
     {
       profile,
       spots,
-      shootTypes: shootTypes.data ?? [],
+      shootTypes,
       filters,
       hiddenByFilters: unfilteredCount - spots.length,
-      supabaseUrl: env.supabaseUrl,
+      photoBaseUrl: env.authOrigin,
       mapStyleUrl: env.mapStyleUrl,
     },
     { headers },
@@ -105,8 +125,15 @@ export async function loader({ request }: Route.LoaderArgs) {
 }
 
 export default function Explore({ loaderData }: Route.ComponentProps) {
-  const { profile, spots, shootTypes, filters, hiddenByFilters, supabaseUrl, mapStyleUrl } =
-    loaderData;
+  const {
+    profile,
+    spots,
+    shootTypes,
+    filters,
+    hiddenByFilters,
+    photoBaseUrl,
+    mapStyleUrl,
+  } = loaderData;
   const [, setSearchParams] = useSearchParams();
   const [hovered, setHovered] = useState<string | null>(null);
 
@@ -114,13 +141,16 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
     (next: Partial<ExploreFilters>) => {
       // replace: true so panning the map does not fill the back button with
       // every intermediate viewport.
-      setSearchParams(filtersToSearchParams({ ...filters, ...next }), { replace: true });
+      setSearchParams(filtersToSearchParams({ ...filters, ...next }), {
+        replace: true,
+      });
     },
     [filters, setSearchParams],
   );
 
   const onViewportChange = useCallback(
-    (next: { viewport: ExploreFilters["viewport"]; zoom: number }) => update(next),
+    (next: { viewport: ExploreFilters["viewport"]; zoom: number }) =>
+      update(next),
     [update],
   );
 
@@ -145,7 +175,15 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
         onSelect={onSelect}
       />
     ),
-    [spots, filters.viewport, filters.zoom, mapStyleUrl, hovered, onViewportChange, onSelect],
+    [
+      spots,
+      filters.viewport,
+      filters.zoom,
+      mapStyleUrl,
+      hovered,
+      onViewportChange,
+      onSelect,
+    ],
   );
 
   const results =
@@ -160,7 +198,7 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
           <li key={spot.id}>
             <SpotCard
               spot={spot}
-              supabaseUrl={supabaseUrl}
+              photoBaseUrl={photoBaseUrl}
               selected={hovered === spot.slug}
               variant={filters.view === "gallery" ? "tile" : "row"}
               onHover={setHovered}
@@ -208,7 +246,9 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
         <button
           type="button"
           aria-pressed={filters.sort === "hot"}
-          onClick={() => update({ sort: filters.sort === "hot" ? "score" : "hot" })}
+          onClick={() =>
+            update({ sort: filters.sort === "hot" ? "score" : "hot" })
+          }
         >
           {filters.sort === "hot" ? "Hot" : "Best"}
         </button>
@@ -224,7 +264,8 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
       <div className="explore__account">
         {profile ? (
           <Form method="post" action="/auth/logout">
-            <span>{profile.displayName}</span> <button type="submit">Sign out</button>
+            <span>{profile.displayName}</span>{" "}
+            <button type="submit">Sign out</button>
           </Form>
         ) : (
           <Link to="/auth/login">Sign in</Link>
@@ -235,12 +276,19 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
 
   const resultsWithNotice = (
     <>
-      {hiddenMessage && spots.length > 0 && <p className="explore__hidden">{hiddenMessage}</p>}
+      {hiddenMessage && spots.length > 0 && (
+        <p className="explore__hidden">{hiddenMessage}</p>
+      )}
       {results}
     </>
   );
 
   return (
-    <ExploreLayout view={filters.view} map={map} results={resultsWithNotice} controls={controls} />
+    <ExploreLayout
+      view={filters.view}
+      map={map}
+      results={resultsWithNotice}
+      controls={controls}
+    />
   );
 }

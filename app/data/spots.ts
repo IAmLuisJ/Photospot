@@ -1,4 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
+import type { DataContext } from "./context";
 import type { LatLng } from "../domain/geo/distance";
 import type { ExploreFilters } from "../domain/filters/explore-filters";
 
@@ -85,29 +85,49 @@ const toSummary = (row: ViewportRow): SpotSummary => ({
 });
 
 export async function listSpotsInViewport(
-  supabase: SupabaseClient,
+  context: DataContext,
   filters: ExploreFilters,
   limit = 200,
 ): Promise<SpotSummary[]> {
-  const { viewport, shootTypeId, sort, attributes } = filters;
-  const { data, error } = await supabase.rpc("spots_in_viewport", {
-    p_west: viewport.west,
-    p_south: viewport.south,
-    p_east: viewport.east,
-    p_north: viewport.north,
-    p_shoot_type_id: shootTypeId,
-    p_sort: sort,
-    p_limit: limit,
-    p_cost_types: attributes.costTypes,
-    p_max_walk_minutes: attributes.maxWalkMinutes,
-    p_accessibility: attributes.accessibility,
-    // `? true : null`, not the boolean itself: false would read as "show me
-    // spots that ban dogs", which nobody asked for and the UI cannot express.
-    p_dog_friendly: attributes.dogFriendlyOnly ? true : null,
-  });
-
-  if (error) throw error;
-  return ((data ?? []) as ViewportRow[]).map(toSummary);
+  const { viewport: v, shootTypeId, sort, attributes: a } = filters;
+  const conditions = [
+    "s.status = 'published'",
+    "s.lat BETWEEN ? AND ?",
+    "s.lng BETWEEN ? AND ?",
+  ];
+  const args: (string | number)[] = [v.south, v.north, v.west, v.east];
+  if (shootTypeId !== null) {
+    conditions.push(
+      "EXISTS(SELECT 1 FROM spot_shoot_types st WHERE st.spot_id=s.id AND st.shoot_type_id=?)",
+    );
+    args.push(shootTypeId);
+  }
+  if (a.costTypes.length) {
+    conditions.push("s.cost_type IN (SELECT value FROM json_each(?))");
+    args.push(JSON.stringify(a.costTypes));
+  }
+  if (a.maxWalkMinutes !== null) {
+    conditions.push("s.walk_minutes <= ?");
+    args.push(a.maxWalkMinutes);
+  }
+  if (a.accessibility.length) {
+    conditions.push(
+      "s.accessibility IS NOT NULL AND NOT EXISTS(SELECT 1 FROM json_each(?) wanted WHERE NOT EXISTS(SELECT 1 FROM json_each(s.accessibility) actual WHERE actual.value=wanted.value))",
+    );
+    args.push(JSON.stringify(a.accessibility));
+  }
+  if (a.dogFriendlyOnly) conditions.push("s.dog_friendly = 1");
+  const order = sort === "hot" ? "hot_score" : "score";
+  const { results } = await context.db
+    .prepare(
+      `SELECT s.*, p.storage_path AS cover_photo_path, p.credit_name AS cover_credit_name
+    FROM spots s LEFT JOIN photos p ON p.id=(SELECT id FROM photos WHERE spot_id=s.id AND status='published'
+      ORDER BY (kind='session') DESC, created_at, id LIMIT 1)
+    WHERE ${conditions.join(" AND ")} ORDER BY s.${order} DESC,s.id LIMIT ?`,
+    )
+    .bind(...args, Math.min(500, Math.max(1, Math.trunc(limit))))
+    .all<ViewportRow>();
+  return results.map(toSummary);
 }
 
 interface DetailRow extends ViewportRow {
@@ -121,26 +141,25 @@ interface DetailRow extends ViewportRow {
   cost_notes: string | null;
   permit_url: string | null;
   hours_notes: string | null;
-  best_light: string[] | null;
-  best_seasons: string[] | null;
+  best_light: string | null;
+  best_seasons: string | null;
   walk_minutes: number | null;
   parking_notes: string | null;
-  terrain: string[] | null;
-  accessibility: string[] | null;
+  terrain: string | null;
+  accessibility: string | null;
   max_group_size: number | null;
-  dog_friendly: boolean | null;
+  dog_friendly: number | null;
 }
 
 export async function getSpotBySlug(
-  supabase: SupabaseClient,
+  context: DataContext,
   slug: string,
 ): Promise<SpotDetail | null> {
-  const { data, error } = await supabase.rpc("spot_by_slug", { p_slug: slug });
-  if (error) throw error;
-
-  const rows = (data ?? []) as DetailRow[];
-  if (rows.length === 0) return null;
-  const row = rows[0];
+  const row = await context.db
+    .prepare("SELECT * FROM spots WHERE slug=? AND status='published'")
+    .bind(slug)
+    .first<DetailRow>();
+  if (!row) return null;
 
   return {
     // spot_by_slug does not project a cover photo; the detail page loads the
@@ -156,14 +175,16 @@ export async function getSpotBySlug(
     costNotes: row.cost_notes,
     permitUrl: row.permit_url,
     hoursNotes: row.hours_notes,
-    bestLight: row.best_light,
-    bestSeasons: row.best_seasons,
+    bestLight: row.best_light === null ? null : JSON.parse(row.best_light),
+    bestSeasons:
+      row.best_seasons === null ? null : JSON.parse(row.best_seasons),
     walkMinutes: row.walk_minutes,
     parkingNotes: row.parking_notes,
-    terrain: row.terrain,
-    accessibility: row.accessibility,
+    terrain: row.terrain === null ? null : JSON.parse(row.terrain),
+    accessibility:
+      row.accessibility === null ? null : JSON.parse(row.accessibility),
     maxGroupSize: row.max_group_size,
-    dogFriendly: row.dog_friendly,
+    dogFriendly: row.dog_friendly === null ? null : row.dog_friendly === 1,
   };
 }
 
@@ -188,44 +209,38 @@ export interface SpotMedia {
 }
 
 /**
- * `status = 'published'` is written explicitly even though RLS enforces it —
- * the RLS predicate is a disjunction and would leave a partial index unused.
+ * Every child query checks both the parent and child publication status.
+ * D1 has no row-level security to supply an implicit visibility filter.
  */
 export async function getSpotMedia(
-  supabase: SupabaseClient,
+  context: DataContext,
   spotId: string,
 ): Promise<SpotMedia> {
-  const [photos, links] = await Promise.all([
-    supabase
-      .from("photos")
-      .select("id, storage_path, kind, caption, credit_name, credit_url")
-      .eq("spot_id", spotId)
-      .eq("status", "published")
-      .order("kind", { ascending: false })
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("spot_gallery_links")
-      .select("id, url, title")
-      .eq("spot_id", spotId)
-      .order("created_at", { ascending: true }),
+  const [photos, links] = await context.db.batch([
+    context.db
+      .prepare(
+        `SELECT p.id,p.storage_path AS storagePath,p.kind,p.caption,p.credit_name AS creditName,p.credit_url AS creditUrl
+      FROM photos p JOIN spots s ON s.id=p.spot_id WHERE p.spot_id=? AND p.status='published' AND s.status='published'
+      ORDER BY (p.kind='session') DESC,p.created_at,p.id`,
+      )
+      .bind(spotId),
+    context.db
+      .prepare(
+        `SELECT l.id,l.url,l.title FROM spot_gallery_links l JOIN spots s ON s.id=l.spot_id
+      WHERE l.spot_id=? AND s.status='published' ORDER BY l.created_at,l.id`,
+      )
+      .bind(spotId),
   ]);
-
-  if (photos.error) throw photos.error;
-  if (links.error) throw links.error;
-
   return {
-    photos: (photos.data ?? []).map((p) => ({
-      id: p.id as string,
-      storagePath: p.storage_path as string,
-      kind: p.kind as "scouting" | "session",
-      caption: p.caption as string | null,
-      creditName: p.credit_name as string | null,
-      creditUrl: p.credit_url as string | null,
-    })),
-    galleryLinks: (links.data ?? []).map((l) => ({
-      id: l.id as string,
-      url: l.url as string,
-      title: l.title as string,
-    })),
+    photos: photos.results as unknown as SpotPhoto[],
+    galleryLinks: links.results as unknown as SpotGalleryLink[],
   };
+}
+
+export async function listShootTypes(context: DataContext) {
+  return (
+    await context.db
+      .prepare("SELECT id,slug,label FROM shoot_types ORDER BY sort_order,id")
+      .all<{ id: number; slug: string; label: string }>()
+  ).results;
 }

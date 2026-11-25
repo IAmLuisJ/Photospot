@@ -29,8 +29,8 @@ export interface SubmissionInput {
   /** All optional (spec §4.7); absent and null both mean "nobody said". */
   costType?: string | null;
   walkMinutes?: number | null;
-  accessibility?: string[];
-  terrain?: string[];
+  accessibility?: string[] | null;
+  terrain?: string[] | null;
   dogFriendly?: boolean | null;
 }
 
@@ -57,32 +57,48 @@ export function validateSubmission(input: SubmissionInput): ValidationResult {
   if (input.name.trim().length === 0) {
     errors.push({ field: "name", message: "Give the spot a name." });
   } else if (input.name.trim().length > MAX_NAME_LENGTH) {
-    errors.push({ field: "name", message: `Keep the name under ${MAX_NAME_LENGTH} characters.` });
+    errors.push({
+      field: "name",
+      message: `Keep the name under ${MAX_NAME_LENGTH} characters.`,
+    });
   }
 
   const { lat, lng } = input.position;
-  if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+  if (
+    !Number.isFinite(lat) ||
+    !Number.isFinite(lng) ||
+    Math.abs(lat) > 90 ||
+    Math.abs(lng) > 180
+  ) {
     errors.push({ field: "position", message: "Drop the pin on the map." });
   }
 
   if (input.shootTypeIds.length === 0) {
-    errors.push({ field: "shootTypeIds", message: "Pick at least one kind of shoot." });
+    errors.push({
+      field: "shootTypeIds",
+      message: "Pick at least one kind of shoot.",
+    });
   }
 
   if (input.photos.length === 0) {
     errors.push({ field: "photos", message: "Add at least one photo." });
   }
 
-  const unattested = input.photos.filter((p) => p.kind === "session" && !p.rightsAttested);
+  const unattested = input.photos.filter(
+    (p) => p.kind === "session" && !p.rightsAttested,
+  );
   if (unattested.length > 0) {
     errors.push({
       field: "photos",
-      message: "Confirm you shot each session photo and have the right to post it.",
+      message:
+        "Confirm you shot each session photo and have the right to post it.",
     });
   }
 
   for (const kind of ["scouting", "session"] as const) {
-    if (input.photos.filter((p) => p.kind === kind).length > MAX_PHOTOS_PER_KIND) {
+    if (
+      input.photos.filter((p) => p.kind === kind).length > MAX_PHOTOS_PER_KIND
+    ) {
       errors.push({
         field: "photos",
         message: `At most ${MAX_PHOTOS_PER_KIND} ${kind} photos. Link a full gallery instead.`,
@@ -94,19 +110,28 @@ export function validateSubmission(input: SubmissionInput): ValidationResult {
   // which value is wrong instead of seeing a 23514 that names the whole array.
   for (const value of input.accessibility ?? []) {
     if (!isAccessibilityValue(value)) {
-      errors.push({ field: "accessibility", message: `"${value}" is not an option.` });
+      errors.push({
+        field: "accessibility",
+        message: `"${value}" is not an option.`,
+      });
     }
   }
   for (const value of input.terrain ?? []) {
     if (!isTerrainValue(value)) {
-      errors.push({ field: "terrain", message: `"${value}" is not an option.` });
+      errors.push({
+        field: "terrain",
+        message: `"${value}" is not an option.`,
+      });
     }
   }
 
   // `!= null` covers both undefined and null in one check; zero is a real
   // answer — you park at the spot — and must not be swept up as missing.
   if (input.walkMinutes != null && input.walkMinutes < 0) {
-    errors.push({ field: "walkMinutes", message: "Walk time cannot be negative." });
+    errors.push({
+      field: "walkMinutes",
+      message: "Walk time cannot be negative.",
+    });
   }
 
   return { errors };

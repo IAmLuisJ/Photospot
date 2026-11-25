@@ -1,26 +1,24 @@
 import { describe, it, expect } from "vitest";
-import { photoUrl, SPOT_PHOTO_BUCKET } from "./photo-url";
-
-const BASE = "http://127.0.0.1:54321";
-
+import { photoUrl } from "./photo-url";
+const BASE = "https://photos.example.com";
 describe("photoUrl", () => {
-  it("builds a public storage URL", () => {
-    expect(photoUrl(BASE, "abc/scout.jpg")).toBe(
-      `${BASE}/storage/v1/object/public/${SPOT_PHOTO_BUCKET}/abc/scout.jpg`,
-    );
+  it("uses the same-origin moderated media endpoint", () => {
+    expect(photoUrl(BASE, "abc/scout.jpg")).toBe(`${BASE}/media/abc/scout.jpg`);
   });
-
-  it("returns null for a missing path, so callers render a placeholder", () => {
+  it("returns null for a missing photo", () => {
     expect(photoUrl(BASE, null)).toBeNull();
   });
-
-  it("tolerates a trailing slash on the base URL", () => {
+  it("tolerates a trailing slash", () => {
     expect(photoUrl(`${BASE}/`, "abc/scout.jpg")).toBe(
-      `${BASE}/storage/v1/object/public/${SPOT_PHOTO_BUCKET}/abc/scout.jpg`,
+      `${BASE}/media/abc/scout.jpg`,
     );
   });
-
-  it("encodes a path with spaces", () => {
-    expect(photoUrl(BASE, "abc/my photo.jpg")).toContain("my%20photo.jpg");
+  it("encodes reserved characters within each key segment", () => {
+    expect(photoUrl(BASE, "abc/my photo?.jpg")).toBe(
+      `${BASE}/media/abc/my%20photo%3F.jpg`,
+    );
+  });
+  it("rejects path traversal segments", () => {
+    expect(photoUrl(BASE, "../secret.jpg")).toBeNull();
   });
 });

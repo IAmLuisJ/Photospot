@@ -1,7 +1,6 @@
 import { useCallback, useState } from "react";
 import { Link, redirect, useFetcher, data as routeData } from "react-router";
-import { createSupabaseServerClient } from "~/lib/supabase.server";
-import { readEnv } from "~/lib/env.server";
+import { getRequestContext } from "~/lib/request-context.server";
 import { getCurrentProfile } from "~/data/profiles";
 import {
   findNearbyDuplicates,
@@ -16,41 +15,39 @@ import {
   type SubmissionInput,
 } from "~/domain/spots/submission";
 import { uploadSpotPhoto } from "~/lib/photo-upload.client";
+import { readPhotoInputs } from "~/lib/submission.server";
 import {
   AttributeFields,
-  checkedValuesFrom,
+  optionalChoicesFrom,
   parseOptionalInt,
   parseOptionalBool,
 } from "~/components/spot/AttributeFields";
-import { createClient } from "@supabase/supabase-js";
+import { listShootTypes } from "~/data/spots";
 import type { Route } from "./+types/submit";
 
 export function meta() {
   return [{ title: "Add a spot — Photospots" }];
 }
 
-export async function loader({ request }: Route.LoaderArgs) {
-  const { supabase, headers } = createSupabaseServerClient(request);
-  const env = readEnv();
-  const profile = await getCurrentProfile(supabase);
+export async function loader({ request, context }: Route.LoaderArgs) {
+  const { store, headers, env } = await getRequestContext(request, context);
+  const profile = await getCurrentProfile(store);
 
   // Submitting requires an account (spec §4.6). Browsing does not, so this is
   // the only place in the app that redirects to sign-in.
   if (!profile) throw redirect("/auth/login", { headers });
 
-  const { data: shootTypes } = await supabase
-    .from("shoot_types")
-    .select("id, slug, label")
-    .order("sort_order");
+  const shootTypes = await listShootTypes(store);
 
   const url = new URL(request.url);
   const lat = Number(url.searchParams.get("lat"));
   const lng = Number(url.searchParams.get("lng"));
   const kind = url.searchParams.get("kind") === "studio" ? "studio" : "outdoor";
 
-  const hasPin = Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
+  const hasPin =
+    Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
   const nearby: NearbySpot[] = hasPin
-    ? await findNearbyDuplicates(supabase, { lat, lng }, kind)
+    ? await findNearbyDuplicates(store, { lat, lng }, kind)
     : [];
 
   return routeData(
@@ -60,20 +57,39 @@ export async function loader({ request }: Route.LoaderArgs) {
       position: hasPin ? { lat, lng } : null,
       kind,
       nearby,
-      supabaseUrl: env.supabaseUrl,
-      supabaseAnonKey: env.supabaseAnonKey,
+      photoBaseUrl: env.authOrigin,
     },
     { headers },
   );
 }
 
-export async function action({ request }: Route.ActionArgs) {
-  const { supabase, headers } = createSupabaseServerClient(request);
-  const profile = await getCurrentProfile(supabase);
-  if (!profile) return routeData({ errors: [{ field: "auth", message: "Sign in first." }] }, { headers });
+export async function action({ request, context }: Route.ActionArgs) {
+  const { store, headers, env } = await getRequestContext(request, context);
+  const profile = await getCurrentProfile(store);
+  if (!profile)
+    return routeData(
+      { errors: [{ field: "auth", message: "Sign in first." }] },
+      { headers, status: 401 },
+    );
 
   const form = await request.formData();
-  const photos = JSON.parse(String(form.get("photos") ?? "[]")) as PhotoInput[];
+  let photos: PhotoInput[];
+  try {
+    photos = readPhotoInputs(form.get("photos"));
+  } catch {
+    return routeData(
+      {
+        errors: [
+          {
+            field: "photos",
+            message:
+              "Invalid photo details. Upload the photos again and check their credits.",
+          },
+        ],
+      },
+      { headers, status: 400 },
+    );
+  }
   const input: SubmissionInput = {
     name: String(form.get("name") ?? ""),
     kind: form.get("kind") === "studio" ? "studio" : "outdoor",
@@ -81,26 +97,41 @@ export async function action({ request }: Route.ActionArgs) {
     description: String(form.get("description") ?? "") || null,
     locality: String(form.get("locality") ?? "") || null,
     region: String(form.get("region") ?? "") || null,
-    shootTypeIds: form.getAll("shootTypeIds").map(Number).filter(Number.isFinite),
+    shootTypeIds: form
+      .getAll("shootTypeIds")
+      .map(Number)
+      .filter(Number.isFinite),
     photos,
     // Collected at submission so a spot is findable immediately, rather than
     // only once someone remembers to edit it.
     costType: String(form.get("costType") ?? "") || null,
     walkMinutes: parseOptionalInt(form, "walkMinutes"),
-    accessibility: checkedValuesFrom(form, "accessibility"),
-    terrain: checkedValuesFrom(form, "terrain"),
+    accessibility: optionalChoicesFrom(form, "accessibility"),
+    terrain: optionalChoicesFrom(form, "terrain"),
     dogFriendly: parseOptionalBool(form, "dogFriendly"),
   };
 
   const { errors } = validateSubmission(input);
-  if (errors.length > 0) return routeData({ errors }, { headers });
+  if (errors.length > 0) return routeData({ errors }, { headers, status: 400 });
 
-  const slug = await resolveSlug(supabase, input.name, input.locality, input.region);
+  const slug = await resolveSlug(
+    store,
+    input.name,
+    input.locality,
+    input.region,
+  );
   try {
-    await createSpot(supabase, input, slug);
+    await createSpot(store, input, slug);
   } catch (err) {
     return routeData(
-      { errors: [{ field: "form", message: err instanceof Error ? err.message : "Could not save." }] },
+      {
+        errors: [
+          {
+            field: "form",
+            message: err instanceof Error ? err.message : "Could not save.",
+          },
+        ],
+      },
       { headers },
     );
   }
@@ -113,7 +144,7 @@ interface StagedPhoto extends PhotoInput {
 }
 
 export default function Submit({ loaderData }: Route.ComponentProps) {
-  const { profile, shootTypes, position, kind, nearby, supabaseUrl, supabaseAnonKey } = loaderData;
+  const { profile, shootTypes, position, kind, nearby } = loaderData;
   const fetcher = useFetcher<typeof action>();
   const [staged, setStaged] = useState<StagedPhoto[]>([]);
   const [uploading, setUploading] = useState(false);
@@ -125,14 +156,8 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
       setUploading(true);
       setUploadError(null);
       try {
-        // A browser client, because uploads go straight to Storage rather than
-        // through the server (spec §9.1).
-        const browser = createClient(supabaseUrl, supabaseAnonKey);
-        const { data: session } = await browser.auth.getSession();
-        if (!session.session) throw new Error("Session expired — sign in again.");
-
         for (const file of Array.from(files)) {
-          const uploaded = await uploadSpotPhoto(browser, profile!.id, file);
+          const uploaded = await uploadSpotPhoto(file);
           setStaged((prev) => [
             ...prev,
             {
@@ -152,19 +177,20 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
         setUploading(false);
       }
     },
-    [profile, supabaseUrl, supabaseAnonKey],
+    [],
   );
 
   const errors = fetcher.data?.errors ?? [];
-  const errorFor = (field: string) => errors.find((e) => e.field === field)?.message;
+  const errorFor = (field: string) =>
+    errors.find((e) => e.field === field)?.message;
 
   if (!position) {
     return (
       <main className="submit">
         <h1>Add a spot</h1>
         <p>
-          Open the map, find the place, and use “Add a spot here”. The pin comes first so we can
-          check whether it is already on the map.
+          Open the map, find the place, and use “Add a spot here”. The pin comes
+          first so we can check whether it is already on the map.
         </p>
         <p>
           <Link to="/">← Back to the map</Link>
@@ -183,7 +209,10 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
       {nearby.length > 0 && (
         <section className="submit__duplicates">
           <h2>Is it one of these?</h2>
-          <p>There {nearby.length === 1 ? "is" : "are"} already {nearby.length} nearby.</p>
+          <p>
+            There {nearby.length === 1 ? "is" : "are"} already {nearby.length}{" "}
+            nearby.
+          </p>
           <ul>
             {nearby.map((s) => (
               <li key={s.id}>
@@ -217,13 +246,15 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
             </label>
           ))}
         </fieldset>
-        {errorFor("shootTypeIds") && <p role="alert">{errorFor("shootTypeIds")}</p>}
+        {errorFor("shootTypeIds") && (
+          <p role="alert">{errorFor("shootTypeIds")}</p>
+        )}
 
         <fieldset>
           <legend>Photos</legend>
           <p>
-            Scouting shots show what the place looks like. Session photos are work you shot there —
-            up to {MAX_PHOTOS_PER_KIND} of each.
+            Scouting shots show what the place looks like. Session photos are
+            work you shot there — up to {MAX_PHOTOS_PER_KIND} of each.
           </p>
           <label>
             Scouting photos
@@ -260,7 +291,12 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
                         onChange={(e) =>
                           setStaged((prev) =>
                             prev.map((q, j) =>
-                              j === i ? { ...q, rightsAttested: e.currentTarget.checked } : q,
+                              j === i
+                                ? {
+                                    ...q,
+                                    rightsAttested: e.currentTarget.checked,
+                                  }
+                                : q,
                             ),
                           )
                         }
@@ -274,7 +310,12 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
                         onChange={(e) =>
                           setStaged((prev) =>
                             prev.map((q, j) =>
-                              j === i ? { ...q, creditName: e.currentTarget.value || null } : q,
+                              j === i
+                                ? {
+                                    ...q,
+                                    creditName: e.currentTarget.value || null,
+                                  }
+                                : q,
                             ),
                           )
                         }
@@ -284,7 +325,9 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
                 )}
                 <button
                   type="button"
-                  onClick={() => setStaged((prev) => prev.filter((_, j) => j !== i))}
+                  onClick={() =>
+                    setStaged((prev) => prev.filter((_, j) => j !== i))
+                  }
                 >
                   Remove
                 </button>
@@ -313,8 +356,8 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
             current={{
               costType: null,
               walkMinutes: null,
-              accessibility: [],
-              terrain: [],
+              accessibility: null,
+              terrain: null,
               dogFriendly: null,
             }}
           />

@@ -1,9 +1,11 @@
+import { useState } from "react";
 import {
   ACCESSIBILITY_OPTIONS,
   TERRAIN_OPTIONS,
   COST_TYPE_OPTIONS,
   isAccessibilityValue,
   isTerrainValue,
+  type AttributeOption,
 } from "~/domain/spots/attributes";
 
 const VALIDATORS: Record<string, (value: string) => boolean> = {
@@ -21,10 +23,20 @@ const VALIDATORS: Record<string, (value: string) => boolean> = {
  */
 export function checkedValuesFrom(form: FormData, field: string): string[] {
   const isValid = VALIDATORS[field] ?? (() => true);
-  return form
-    .getAll(field)
-    .map(String)
-    .filter(isValid);
+  return form.getAll(field).map(String).filter(isValid);
+}
+
+/** Unknown, explicitly none, and a missing control group have different meanings. */
+export function optionalChoicesFrom(
+  form: FormData,
+  field: string,
+  fallback: string[] | null = null,
+): string[] | null {
+  const state = form.get(`${field}State`);
+  if (state === "unknown") return null;
+  if (state === "known" || form.has(field))
+    return checkedValuesFrom(form, field);
+  return fallback;
 }
 
 /**
@@ -36,7 +48,10 @@ export function checkedValuesFrom(form: FormData, field: string): string[] {
  * never said. Every other optional attribute treats null as "nobody said"
  * (spec §4.7), and the detail page omits a null rather than rendering it.
  */
-export function parseOptionalBool(form: FormData, field: string): boolean | null {
+export function parseOptionalBool(
+  form: FormData,
+  field: string,
+): boolean | null {
   const raw = form.get(field);
   if (raw === "yes") return true;
   if (raw === "no") return false;
@@ -62,17 +77,61 @@ export interface AttributeValues {
   dogFriendly: boolean | null;
 }
 
+function OptionalChoices({
+  field,
+  legend,
+  options,
+  current,
+}: {
+  field: string;
+  legend: string;
+  options: readonly AttributeOption[];
+  current: string[] | null;
+}) {
+  const [known, setKnown] = useState(current !== null);
+  return (
+    <fieldset>
+      <legend>{legend}</legend>
+      <label>
+        What do you know?
+        <select
+          name={`${field}State`}
+          value={known ? "known" : "unknown"}
+          onChange={(event) => setKnown(event.target.value === "known")}
+        >
+          <option value="unknown">Not sure yet</option>
+          <option value="known">I know which options apply</option>
+        </select>
+      </label>
+      {options.map((option) => (
+        <label key={option.value}>
+          <input
+            type="checkbox"
+            name={field}
+            value={option.value}
+            defaultChecked={current?.includes(option.value) ?? false}
+            disabled={!known}
+          />
+          {option.label}
+        </label>
+      ))}
+      {known && (
+        <p className="attribute-fields__hint">
+          Leave all options unchecked if none apply.
+        </p>
+      )}
+    </fieldset>
+  );
+}
+
 /** Shared by the submission form and the edit form, so the two cannot diverge. */
 export function AttributeFields({ current }: { current: AttributeValues }) {
-  const accessibility = current.accessibility ?? [];
-  const terrain = current.terrain ?? [];
-
   return (
     <fieldset className="attribute-fields">
       <legend>Practical detail</legend>
       <p className="attribute-fields__hint">
-        All optional — but these are what someone filters on, so anything you fill in makes the
-        spot findable.
+        All optional — but these are what someone filters on, so anything you
+        fill in makes the spot findable.
       </p>
 
       <label>
@@ -89,44 +148,40 @@ export function AttributeFields({ current }: { current: AttributeValues }) {
 
       <label>
         Walk from parking (minutes)
-        <input type="number" name="walkMinutes" min={0} defaultValue={current.walkMinutes ?? ""} />
+        <input
+          type="number"
+          name="walkMinutes"
+          min={0}
+          defaultValue={current.walkMinutes ?? ""}
+        />
       </label>
 
-      <fieldset>
-        <legend>Getting around</legend>
-        {ACCESSIBILITY_OPTIONS.map((o) => (
-          <label key={o.value}>
-            <input
-              type="checkbox"
-              name="accessibility"
-              value={o.value}
-              defaultChecked={accessibility.includes(o.value)}
-            />
-            {o.label}
-          </label>
-        ))}
-      </fieldset>
-
-      <fieldset>
-        <legend>Underfoot</legend>
-        {TERRAIN_OPTIONS.map((o) => (
-          <label key={o.value}>
-            <input
-              type="checkbox"
-              name="terrain"
-              value={o.value}
-              defaultChecked={terrain.includes(o.value)}
-            />
-            {o.label}
-          </label>
-        ))}
-      </fieldset>
+      <OptionalChoices
+        key={`accessibility:${JSON.stringify(current.accessibility)}`}
+        field="accessibility"
+        legend="Getting around"
+        options={ACCESSIBILITY_OPTIONS}
+        current={current.accessibility}
+      />
+      <OptionalChoices
+        key={`terrain:${JSON.stringify(current.terrain)}`}
+        field="terrain"
+        legend="Underfoot"
+        options={TERRAIN_OPTIONS}
+        current={current.terrain}
+      />
 
       <label>
         Dogs
         <select
           name="dogFriendly"
-          defaultValue={current.dogFriendly === null ? "" : current.dogFriendly ? "yes" : "no"}
+          defaultValue={
+            current.dogFriendly === null
+              ? ""
+              : current.dogFriendly
+                ? "yes"
+                : "no"
+          }
         >
           <option value="">Not sure</option>
           <option value="yes">Welcome</option>

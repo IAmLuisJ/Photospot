@@ -8,6 +8,8 @@ export default [
   route("studios/:slug", "routes/studios.$slug.tsx"),
   route("admin", "routes/admin.tsx"),
   route("auth/login", "routes/auth.login.tsx"),
-  route("auth/callback", "routes/auth.callback.tsx"),
   route("auth/logout", "routes/auth.logout.tsx"),
+  route("api/auth/*", "routes/api.auth.ts"),
+  route("uploads", "routes/uploads.ts"),
+  route("media/*", "routes/media.ts"),
 ] satisfies RouteConfig;

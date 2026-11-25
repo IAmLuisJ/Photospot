@@ -1,9 +1,20 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import type { LatLng } from "../domain/geo/distance";
-import { DUPLICATE_RADIUS_METERS } from "../domain/geo/distance";
+import {
+  DUPLICATE_RADIUS_METERS,
+  haversineMeters,
+  type LatLng,
+} from "../domain/geo/distance";
 import { slugCandidates } from "../domain/spots/slug";
-import type { SubmissionInput } from "../domain/spots/submission";
+import {
+  validateSubmission,
+  type SubmissionInput,
+} from "../domain/spots/submission";
 import type { SpotKind } from "./spots";
+import {
+  httpUrl,
+  requirePublishedSpot,
+  requireViewer,
+  type DataContext,
+} from "./context";
 
 export interface NearbySpot {
   id: string;
@@ -15,173 +26,249 @@ export interface NearbySpot {
   distanceMeters: number;
 }
 
-interface NearbyRow {
-  id: string;
-  name: string;
-  slug: string;
-  kind: SpotKind;
-  locality: string | null;
-  region: string | null;
-  distance_meters: number;
-}
-
-/**
- * Spec §9.1: run before the form, not after. Catching a duplicate up front
- * turns a rejection into a contribution, because the user can be sent to the
- * existing spot instead.
- */
 export async function findNearbyDuplicates(
-  supabase: SupabaseClient,
+  context: DataContext,
   position: LatLng,
   kind: SpotKind,
-  radiusMeters: number = DUPLICATE_RADIUS_METERS,
+  radiusMeters = DUPLICATE_RADIUS_METERS,
 ): Promise<NearbySpot[]> {
-  const { data, error } = await supabase.rpc("spots_within_meters", {
-    p_lng: position.lng,
-    p_lat: position.lat,
-    p_meters: radiusMeters,
-    p_kind: kind,
-  });
-  if (error) throw error;
-
-  return ((data ?? []) as NearbyRow[]).map((row) => ({
-    id: row.id,
-    name: row.name,
-    slug: row.slug,
-    kind: row.kind,
-    locality: row.locality,
-    region: row.region,
-    distanceMeters: row.distance_meters,
-  }));
+  if (
+    !Number.isFinite(radiusMeters) ||
+    radiusMeters < 0 ||
+    !Number.isFinite(position.lat) ||
+    !Number.isFinite(position.lng)
+  )
+    throw new Error("Invalid proximity query.");
+  // A conservative rectangle selects candidates; the shared great-circle
+  // calculation determines inclusion. No LIMIT is applied before that check.
+  const dLat = radiusMeters / 110_000;
+  const dLng = Math.min(
+    180,
+    dLat /
+      Math.max(
+        0.000001,
+        Math.cos(((Math.abs(position.lat) + dLat) * Math.PI) / 180),
+      ),
+  );
+  const { results } = await context.db
+    .prepare(
+      `SELECT id,name,slug,kind,locality,region,lat,lng FROM spots
+    WHERE status='published' AND kind=? AND lat BETWEEN ? AND ?
+    AND (abs(lng-?)<=? OR abs(lng-?)>=?)`,
+    )
+    .bind(
+      kind,
+      position.lat - dLat,
+      position.lat + dLat,
+      position.lng,
+      dLng,
+      position.lng,
+      360 - dLng,
+    )
+    .all<{
+      id: string;
+      name: string;
+      slug: string;
+      kind: SpotKind;
+      locality: string | null;
+      region: string | null;
+      lat: number;
+      lng: number;
+    }>();
+  return results
+    .map(({ lat, lng, ...row }) => ({
+      ...row,
+      distanceMeters: haversineMeters(position, { lat, lng }),
+    }))
+    .filter((s) => s.distanceMeters <= radiusMeters)
+    .sort(
+      (a, b) => a.distanceMeters - b.distanceMeters || a.id.localeCompare(b.id),
+    );
 }
 
-/**
- * First free candidate from `slugCandidates`.
- *
- * The last candidate always carries a random discriminator, so this cannot run
- * out — but the insert is still the authority, since another submission could
- * take the slug between this check and the write.
- */
 export async function resolveSlug(
-  supabase: SupabaseClient,
+  context: DataContext,
   name: string,
   locality: string | null,
   region: string | null,
 ): Promise<string> {
   for (const candidate of slugCandidates(name, locality, region)) {
-    const { data, error } = await supabase.rpc("slug_exists", { p_slug: candidate });
-    if (error) throw error;
-    if (!data) return candidate;
+    if (
+      !(await context.db
+        .prepare("SELECT id FROM spots WHERE slug=?")
+        .bind(candidate)
+        .first())
+    )
+      return candidate;
   }
-  // Unreachable: the final candidate is randomised. Belt and braces.
   return `${slugCandidates(name, locality, region)[0]}-${crypto.randomUUID().slice(0, 8)}`;
 }
 
-/** One transaction for the spot, its shoot types and its photos (spec §10). */
 export async function createSpot(
-  supabase: SupabaseClient,
+  context: DataContext,
   input: SubmissionInput,
   slug: string,
 ): Promise<string> {
-  const { data, error } = await supabase.rpc("create_spot", {
-    p_name: input.name.trim(),
-    p_kind: input.kind,
-    p_lng: input.position.lng,
-    p_lat: input.position.lat,
-    p_slug: slug,
-    p_description: input.description ?? "",
-    p_locality: input.locality ?? "",
-    p_region: input.region ?? "",
-    p_shoot_type_ids: input.shootTypeIds,
-    p_photos: input.photos.map((p) => ({
-      storage_path: p.storagePath,
-      kind: p.kind,
-      rights_attested: p.rightsAttested,
-      credit_name: p.creditName ?? "",
-      credit_url: p.creditUrl ?? "",
-      caption: p.caption ?? "",
-    })),
-    // `?? null` rather than `?? ""` for the arrays and the boolean: the RPC
-    // stores these as given, and null is "nobody said" where an empty array is
-    // "none of these apply". cost_type keeps the empty-string idiom the other
-    // text arguments use, because the RPC nullifs it before the enum cast.
-    p_cost_type: input.costType ?? "",
-    p_walk_minutes: input.walkMinutes ?? null,
-    p_accessibility: input.accessibility ?? null,
-    p_terrain: input.terrain ?? null,
-    p_dog_friendly: input.dogFriendly ?? null,
-  });
-
-  if (error) throw error;
-  return data as string;
+  const viewer = requireViewer(context);
+  const { errors } = validateSubmission(input);
+  if (errors.length) throw new Error(errors[0].message);
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  // The NOT NULL storage_path constraint makes a missing/expired/already-used
+  // receipt abort the batch, including the parent spot and its shoot types.
+  const statements = [
+    context.db
+      .prepare(
+        `INSERT INTO spots
+    (id,name,slug,kind,lat,lng,description,locality,region,created_by,cost_type,walk_minutes,accessibility,terrain,dog_friendly)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+      )
+      .bind(
+        id,
+        input.name.trim(),
+        slug,
+        input.kind,
+        input.position.lat,
+        input.position.lng,
+        input.description,
+        input.locality,
+        input.region,
+        viewer.id,
+        input.costType || null,
+        input.walkMinutes ?? null,
+        input.accessibility == null
+          ? null
+          : JSON.stringify(input.accessibility),
+        input.terrain == null ? null : JSON.stringify(input.terrain),
+        input.dogFriendly == null ? null : Number(input.dogFriendly),
+      ),
+  ];
+  for (const type of new Set(input.shootTypeIds))
+    statements.push(
+      context.db
+        .prepare(
+          "INSERT INTO spot_shoot_types(spot_id,shoot_type_id) VALUES (?,?)",
+        )
+        .bind(id, type),
+    );
+  for (const photo of input.photos) {
+    if (photo.creditUrl) httpUrl(photo.creditUrl);
+    statements.push(
+      context.db
+        .prepare(
+          `INSERT INTO photos(id,spot_id,profile_id,kind,storage_path,rights_attested,credit_name,credit_url,caption)
+      VALUES (?,?,?,?,(SELECT storage_path FROM uploads WHERE storage_path=? AND profile_id=? AND state='ready' AND attached_at IS NULL AND expires_at>strftime('%Y-%m-%dT%H:%M:%fZ','now')),?,?,?,?)`,
+        )
+        .bind(
+          crypto.randomUUID(),
+          id,
+          viewer.id,
+          photo.kind,
+          photo.storagePath,
+          viewer.id,
+          Number(photo.rightsAttested),
+          photo.creditName,
+          photo.creditUrl,
+          photo.caption,
+        ),
+    );
+    statements.push(
+      context.db
+        .prepare(
+          "UPDATE uploads SET attached_at=? WHERE storage_path=? AND profile_id=? AND attached_at IS NULL",
+        )
+        .bind(now, photo.storagePath, viewer.id),
+    );
+  }
+  try {
+    await context.db.batch(statements);
+  } catch (error) {
+    if (
+      error instanceof Error &&
+      /NOT NULL.*photos.storage_path/.test(error.message)
+    )
+      throw new Error(
+        "A photo upload is missing, expired, or belongs to another user. Upload it again.",
+      );
+    throw error;
+  }
+  return id;
 }
 
 export async function addGalleryLink(
-  supabase: SupabaseClient,
+  context: DataContext,
   spotId: string,
   url: string,
   title: string,
 ): Promise<void> {
-  const { data: user } = await supabase.auth.getUser();
-  if (!user.user) throw new Error("Must be signed in to add a gallery link.");
-
-  const { error } = await supabase.from("spot_gallery_links").insert({
-    spot_id: spotId,
-    profile_id: user.user.id,
-    url,
-    title,
-  });
-  if (error) throw error;
+  const viewer = requireViewer(context);
+  await requirePublishedSpot(context, spotId);
+  const safeUrl = httpUrl(url);
+  if (!title.trim()) throw new Error("Give the gallery a title.");
+  const result = await context.db
+    .prepare(
+      `INSERT INTO spot_gallery_links(id,spot_id,profile_id,url,title)
+    SELECT ?,id,?,?,? FROM spots WHERE id=? AND status='published'`,
+    )
+    .bind(crypto.randomUUID(), viewer.id, safeUrl, title.trim(), spotId)
+    .run();
+  if (!result.meta.changes) throw new Error("Spot not found.");
 }
 
-/**
- * Editing is column-scoped by the grants in migration 5; `status`, `score` and
- * the counters are not writable here and attempting one is a 42501.
- *
- * Every field is optional and the `!== undefined` guard is what separates "not
- * on this form" from "cleared to null". That distinction is why the edit action
- * sends every attribute explicitly rather than only the non-empty ones —
- * without it an attribute could be set but never removed.
- *
- * Returns whether a row actually changed. RLS decides who may edit, and a
- * non-owner's update matches **zero rows without erroring** — so `error` being
- * null does not mean anything was saved. Without this the edit form redirects
- * to the spot page as though it worked and silently discards everything the
- * user typed. `.select("id")` is what turns that into an answer.
- */
-export async function updateSpot(
-  supabase: SupabaseClient,
-  spotId: string,
-  fields: {
-    name?: string;
-    description?: string | null;
-    locality?: string | null;
-    region?: string | null;
-    walkMinutes?: number | null;
-    parkingNotes?: string | null;
-    costType?: string | null;
-    accessibility?: string[] | null;
-    terrain?: string[] | null;
-    dogFriendly?: boolean | null;
-  },
-): Promise<boolean> {
-  const { data, error } = await supabase
-    .from("spots")
-    .update({
-      ...(fields.name !== undefined ? { name: fields.name } : {}),
-      ...(fields.description !== undefined ? { description: fields.description } : {}),
-      ...(fields.locality !== undefined ? { locality: fields.locality } : {}),
-      ...(fields.region !== undefined ? { region: fields.region } : {}),
-      ...(fields.walkMinutes !== undefined ? { walk_minutes: fields.walkMinutes } : {}),
-      ...(fields.parkingNotes !== undefined ? { parking_notes: fields.parkingNotes } : {}),
-      ...(fields.costType !== undefined ? { cost_type: fields.costType } : {}),
-      ...(fields.accessibility !== undefined ? { accessibility: fields.accessibility } : {}),
-      ...(fields.terrain !== undefined ? { terrain: fields.terrain } : {}),
-      ...(fields.dogFriendly !== undefined ? { dog_friendly: fields.dogFriendly } : {}),
-    })
-    .eq("id", spotId)
-    .select("id");
+export interface SpotEdits {
+  name?: string;
+  description?: string | null;
+  locality?: string | null;
+  region?: string | null;
+  walkMinutes?: number | null;
+  parkingNotes?: string | null;
+  costType?: string | null;
+  accessibility?: string[] | null;
+  terrain?: string[] | null;
+  dogFriendly?: boolean | null;
+}
 
-  if (error) throw error;
-  return (data ?? []).length > 0;
+export async function updateSpot(
+  context: DataContext,
+  spotId: string,
+  fields: SpotEdits,
+): Promise<boolean> {
+  const viewer = requireViewer(context);
+  const columns: Record<keyof SpotEdits, string> = {
+    name: "name",
+    description: "description",
+    locality: "locality",
+    region: "region",
+    walkMinutes: "walk_minutes",
+    parkingNotes: "parking_notes",
+    costType: "cost_type",
+    accessibility: "accessibility",
+    terrain: "terrain",
+    dogFriendly: "dog_friendly",
+  };
+  const assignments: string[] = [];
+  const values: (string | number | null)[] = [];
+  for (const key of Object.keys(columns) as (keyof SpotEdits)[]) {
+    const value = fields[key];
+    if (value === undefined) continue;
+    assignments.push(`${columns[key]}=?`);
+    values.push(
+      value === null
+        ? null
+        : Array.isArray(value)
+          ? JSON.stringify(value)
+          : typeof value === "boolean"
+            ? Number(value)
+            : value,
+    );
+  }
+  if (!assignments.length) return false;
+  const result = await context.db
+    .prepare(
+      `UPDATE spots SET ${assignments.join(",")} WHERE id=?
+    AND ((status='published' AND (created_by=? OR owner_profile_id=?)) OR EXISTS(SELECT 1 FROM profiles WHERE id=? AND role='admin'))`,
+    )
+    .bind(...values, spotId, viewer.id, viewer.id, viewer.id)
+    .run();
+  return result.meta.changes > 0;
 }

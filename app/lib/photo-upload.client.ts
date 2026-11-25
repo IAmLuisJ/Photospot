@@ -1,5 +1,4 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { SPOT_PHOTO_BUCKET } from "./photo-url";
+export { uploadPathFor } from "./photo-path";
 
 /** Longest edge after downscaling. Enough for a full-width hero on a retina screen. */
 export const MAX_IMAGE_EDGE = 2000;
@@ -20,26 +19,16 @@ export function targetDimensions(
   };
 }
 
-/**
- * Where a file goes in the bucket.
- *
- * The first folder must be the uploader's id — that is what the storage policy
- * checks — and the spot does not exist yet at upload time (spec §10). The
- * original filename is discarded rather than sanitised: it can carry the
- * uploader's name or location and there is no reason to publish it.
- */
-export function uploadPathFor(userId: string, originalName: string): string {
-  const match = /\.([a-z0-9]+)$/i.exec(originalName);
-  const ext = (match?.[1] ?? "jpg").toLowerCase();
-  return `${userId}/${crypto.randomUUID()}.${ext}`;
-}
-
 /** Downscale in the browser so a 12 MP phone photo does not travel at full size. */
 async function downscale(file: File): Promise<Blob> {
   const bitmap = await createImageBitmap(file);
   const { width, height } = targetDimensions(bitmap.width, bitmap.height);
 
-  if (width === bitmap.width && height === bitmap.height && file.size < 1_500_000) {
+  if (
+    width === bitmap.width &&
+    height === bitmap.height &&
+    file.size < 1_500_000
+  ) {
     bitmap.close();
     return file;
   }
@@ -72,23 +61,27 @@ export interface UploadedPhoto {
  * orphaned objects, which spec §10 says a periodic job sweeps — that is the
  * accepted cost of never creating a photo-less spot.
  */
-export async function uploadSpotPhoto(
-  supabase: SupabaseClient,
-  userId: string,
-  file: File,
-): Promise<UploadedPhoto> {
+export async function uploadSpotPhoto(file: File): Promise<UploadedPhoto> {
   const bitmap = await createImageBitmap(file);
   const dimensions = targetDimensions(bitmap.width, bitmap.height);
   bitmap.close();
 
   const body = await downscale(file);
-  const path = uploadPathFor(userId, file.name);
-
-  const { error } = await supabase.storage.from(SPOT_PHOTO_BUCKET).upload(path, body, {
-    contentType: body.type || "image/jpeg",
-    upsert: false,
+  const response = await fetch("/uploads", {
+    method: "POST",
+    credentials: "same-origin",
+    headers: { "Content-Type": body.type || "image/jpeg" },
+    body,
   });
-  if (error) throw error;
-
-  return { storagePath: path, width: dimensions.width, height: dimensions.height };
+  const uploaded = (await response.json()) as {
+    storagePath?: string;
+    error?: string;
+  };
+  if (!response.ok || !uploaded.storagePath)
+    throw new Error(uploaded.error ?? "Could not upload that photo.");
+  return {
+    storagePath: uploaded.storagePath,
+    width: dimensions.width,
+    height: dimensions.height,
+  };
 }

@@ -1,5 +1,9 @@
 import { useFetcher } from "react-router";
-import { REPORT_REASONS, isReportReason, type ReportTarget } from "~/domain/reports/reasons";
+import {
+  REPORT_REASONS,
+  isReportReason,
+  type ReportTarget,
+} from "~/domain/reports/reasons";
 
 const TARGETS: readonly string[] = ["spot", "photo", "comment"];
 
@@ -13,18 +17,23 @@ export interface ReportIntent {
 /**
  * Reads a report submission out of the form, or null if this is not one.
  *
- * Validates the target type as well as the reason: `target_type` is a Postgres
- * enum, so a bad value is a 22P02 the user cannot act on, and `reason` is free
- * text, so a bad value is stored forever and renders as itself in the queue.
- * The action is a public endpoint, so neither can be taken on trust.
+ * Validate both the schema-constrained target type and the product's reason
+ * vocabulary. Forms can be posted directly without using this component.
  */
-export function reportIntentFrom(formData: FormData | undefined): ReportIntent | null {
+export function reportIntentFrom(
+  formData: FormData | undefined,
+): ReportIntent | null {
   if (formData?.get("intent") !== "report") return null;
 
   const targetType = String(formData.get("targetType") ?? "");
   const targetId = String(formData.get("targetId") ?? "");
   const reason = String(formData.get("reason") ?? "");
-  if (!TARGETS.includes(targetType) || targetId === "" || !isReportReason(reason)) return null;
+  if (
+    !TARGETS.includes(targetType) ||
+    targetId === "" ||
+    !isReportReason(reason)
+  )
+    return null;
 
   const note = String(formData.get("note") ?? "").trim();
   return {
@@ -54,7 +63,8 @@ export function ReportButton({
   const fetcher = useFetcher<{ error?: string; reported?: boolean }>();
   if (!signedIn) return null;
 
-  if (fetcher.data?.reported) return <p className="report__done">{reportConfirmation()}</p>;
+  if (fetcher.data?.reported)
+    return <p className="report__done">{reportConfirmation()}</p>;
 
   return (
     <details className="report">

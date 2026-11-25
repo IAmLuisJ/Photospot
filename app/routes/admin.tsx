@@ -1,7 +1,11 @@
 import { Link, redirect, data as routeData } from "react-router";
-import { createSupabaseServerClient } from "~/lib/supabase.server";
+import { getRequestContext } from "~/lib/request-context.server";
 import { getCurrentProfile } from "~/data/profiles";
-import { listReportQueue, resolveReport } from "~/data/reports";
+import {
+  listReportQueue,
+  resolveReport,
+  ReportConflictError,
+} from "~/data/reports";
 import { ReportRow } from "~/components/admin/ReportRow";
 import type { ResolutionAction } from "~/domain/reports/reasons";
 import type { Route } from "./+types/admin";
@@ -12,13 +16,13 @@ export function meta() {
 
 const ACTIONS: readonly string[] = ["hide", "remove", "dismiss"];
 
-export async function loader({ request }: Route.LoaderArgs) {
-  const { supabase, headers } = createSupabaseServerClient(request);
-  const profile = await getCurrentProfile(supabase);
+export async function loader({ request, context }: Route.LoaderArgs) {
+  const { store, headers, env } = await getRequestContext(request, context);
+  const profile = await getCurrentProfile(store);
   if (!profile) throw redirect("/auth/login", { headers });
 
   try {
-    const reports = await listReportQueue(supabase);
+    const reports = await listReportQueue(store);
     return routeData({ reports }, { headers });
   } catch {
     // admin_report_queue raises for a non-admin rather than returning nothing,
@@ -28,9 +32,9 @@ export async function loader({ request }: Route.LoaderArgs) {
   }
 }
 
-export async function action({ request }: Route.ActionArgs) {
-  const { supabase, headers } = createSupabaseServerClient(request);
-  const profile = await getCurrentProfile(supabase);
+export async function action({ request, context }: Route.ActionArgs) {
+  const { store, headers, env } = await getRequestContext(request, context);
+  const profile = await getCurrentProfile(store);
   if (!profile) {
     return routeData({ error: "Sign in first." }, { headers, status: 401 });
   }
@@ -40,17 +44,22 @@ export async function action({ request }: Route.ActionArgs) {
   const action = String(form.get("action") ?? "");
 
   if (reportId === "" || !ACTIONS.includes(action)) {
-    return routeData({ error: "That action was not understood." }, { headers, status: 400 });
+    return routeData(
+      { error: "That action was not understood." },
+      { headers, status: 400 },
+    );
   }
 
   try {
-    // resolve_report re-checks is_admin() itself; this is not the security
-    // boundary, only the error message.
-    await resolveReport(supabase, reportId, action as ResolutionAction);
+    // The command rechecks admin role and report state in the mutation.
+    await resolveReport(store, reportId, action as ResolutionAction);
   } catch (err) {
     return routeData(
-      { error: err instanceof Error ? err.message : "Could not resolve that report." },
-      { headers, status: 403 },
+      {
+        error:
+          err instanceof Error ? err.message : "Could not resolve that report.",
+      },
+      { headers, status: err instanceof ReportConflictError ? 409 : 403 },
     );
   }
 

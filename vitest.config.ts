@@ -1,19 +1,8 @@
-import { loadEnv } from "vite";
 import { defineConfig } from "vitest/config";
-
-// Vitest doesn't load `.env` into `process.env` automatically (Vite only
-// exposes `VITE_`-prefixed vars via `import.meta.env` for client code).
-// `tests/db/helpers.ts` reads `process.env.SUPABASE_*` directly, so pull the
-// full `.env` file in here and merge it into `process.env` for every project.
-Object.assign(process.env, loadEnv("", process.cwd(), ""));
 
 export default defineConfig({
   test: {
-    // Deliberately no passWithNoTests here. On the root config it applies to
-    // the whole run, so a broken glob would exit 0 with nothing executed.
-    // `tests/db/` doesn't exist until task 6, and Vitest ignores the flag when
-    // set per-project, so the `test:db` script passes it on the command line
-    // instead — per-invocation, and it can't leak into `npm test`.
+    // A broken test glob must fail rather than silently report success.
     projects: [
       {
         resolve: { tsconfigPaths: true },
@@ -29,12 +18,8 @@ export default defineConfig({
         test: {
           name: "db",
           environment: "node",
-          include: ["tests/db/**/*.test.ts"],
+          include: ["tests/d1/**/*.test.ts"],
           globals: false,
-          // These tests all hit one shared Postgres instance (e.g. task 15's
-          // backfill rewrites spots.score across every row) so they must not
-          // run as concurrent files.
-          fileParallelism: false,
         },
       },
     ],

@@ -1,5 +1,8 @@
-import type { SupabaseClient } from "@supabase/supabase-js";
-
+import {
+  requirePublishedSpot,
+  requireViewer,
+  type DataContext,
+} from "./context";
 export interface StudioDetails {
   spotId: string;
   hourlyRateCents: number | null;
@@ -8,62 +11,55 @@ export interface StudioDetails {
   claimedBy: string | null;
   claimedAt: string | null;
 }
-
-interface StudioRow {
-  spot_id: string;
-  hourly_rate_cents: number | null;
-  booking_url: string | null;
-  contact_email: string | null;
-  claimed_by: string | null;
-  claimed_at: string | null;
-}
-
-/**
- * Null for an outdoor spot, which has no `studio_details` row at all —
- * `maybeSingle()` rather than `single()`, which would call that a PGRST116
- * error rather than an answer.
- */
 export async function getStudioDetails(
-  supabase: SupabaseClient,
+  context: DataContext,
   spotId: string,
 ): Promise<StudioDetails | null> {
-  const { data, error } = await supabase
-    .from("studio_details")
-    .select("spot_id, hourly_rate_cents, booking_url, contact_email, claimed_by, claimed_at")
-    .eq("spot_id", spotId)
-    .maybeSingle();
-
-  if (error) throw error;
-  if (!data) return null;
-
-  const row = data as StudioRow;
-  return {
-    spotId: row.spot_id,
-    hourlyRateCents: row.hourly_rate_cents,
-    bookingUrl: row.booking_url,
-    contactEmail: row.contact_email,
-    claimedBy: row.claimed_by,
-    claimedAt: row.claimed_at,
-  };
+  return context.db
+    .prepare(
+      `SELECT d.spot_id AS spotId,d.hourly_rate_cents AS hourlyRateCents,d.booking_url AS bookingUrl,
+    d.contact_email AS contactEmail,d.claimed_by AS claimedBy,d.claimed_at AS claimedAt FROM studio_details d
+    JOIN spots s ON s.id=d.spot_id WHERE d.spot_id=? AND s.status='published'`,
+    )
+    .bind(spotId)
+    .first<StudioDetails>();
 }
-
-/**
- * Spec §9.3: claiming is a command, not a row write. `claimed_by` is absent
- * from the column grants, so only `claim_studio()` sets it, after confirming
- * the caller's own verified email matches the listing contact. Allowing the
- * column to be written directly would let any signed-in user claim any
- * unclaimed studio — first come, first served, across every listing at once.
- */
-export async function claimStudio(supabase: SupabaseClient, spotId: string): Promise<void> {
-  const { error } = await supabase.rpc("claim_studio", { p_spot_id: spotId });
-  if (error) throw error;
+export async function claimStudio(
+  context: DataContext,
+  spotId: string,
+): Promise<void> {
+  const viewer = requireViewer(context);
+  await requirePublishedSpot(context, spotId);
+  const listing = await getStudioDetails(context, spotId);
+  if (!listing || listing.claimedBy || !listing.contactEmail)
+    throw new Error("listing is not claimable");
+  if (
+    !viewer.emailVerified ||
+    viewer.email.toLowerCase() !== listing.contactEmail.toLowerCase()
+  )
+    throw new Error(
+      "claim requires a confirmed email matching the listing contact",
+    );
+  const now = new Date().toISOString();
+  const [claimed] = await context.db.batch([
+    context.db
+      .prepare(
+        `UPDATE studio_details SET claimed_by=?,claimed_at=?,updated_at=? WHERE spot_id=? AND claimed_by IS NULL
+      AND EXISTS(SELECT 1 FROM "user" u WHERE u.id=? AND u.emailVerified=1 AND lower(u.email)=lower(studio_details.contact_email))
+      AND EXISTS(SELECT 1 FROM spots WHERE id=? AND kind='studio' AND status='published')`,
+      )
+      .bind(viewer.id, now, now, spotId, viewer.id, spotId),
+    context.db
+      .prepare(
+        `UPDATE spots SET owner_profile_id=? WHERE id=? AND EXISTS(SELECT 1 FROM studio_details
+      WHERE spot_id=? AND claimed_by=? AND claimed_at=?)`,
+      )
+      .bind(viewer.id, spotId, spotId, viewer.id, now),
+  ]);
+  if (!claimed.meta.changes) throw new Error("listing is not claimable");
 }
-
-/** Renders "$120/hour" from cents, or null when no rate is recorded. */
 export function hourlyRateLabel(cents: number | null): string | null {
   if (cents === null) return null;
   const dollars = cents / 100;
-  // No decimals on a whole number of dollars: "$120/hour", not "$120.00/hour".
-  const amount = Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2);
-  return `$${amount}/hour`;
+  return `$${Number.isInteger(dollars) ? String(dollars) : dollars.toFixed(2)}/hour`;
 }

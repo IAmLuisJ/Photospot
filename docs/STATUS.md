@@ -1,12 +1,20 @@
 # Project status
 
-Updated November 25, 2026. Refactored for Cloudflare Workers, D1, R2, Better Auth Google sign-in
-and Resend magic links. Changes are in the existing checkout. No production provisioning, import,
-provider setup or deployment has been performed.
+Updated November 25, 2026. Deployed to
+[photospots.luisisthejuarez.workers.dev](https://photospots.luisisthejuarez.workers.dev)
+with Workers, migrated D1, private R2, Better Auth and Resend email links. Google sign-in is
+disabled until OAuth credentials are configured. Development fixtures were not copied to production.
+
+Source was published through the connected GitHub account because this session cannot write the
+local Git metadata. The original checkout's files remain available, but its Git status may still
+show the published changes until the checkout is synchronized locally.
 
 Verification: 333 tests passing (275 unit, 58 integration), TypeScript checks, production build,
 and native workerd HTTP smoke. Production dependency audit reports zero known vulnerabilities.
 Independent review findings were addressed with regression coverage and cutover documentation.
+Live checks confirmed the homepage, sign-in page, session API, private media behavior, and map
+worker/tile loading. The maintenance cron is enabled. Real email delivery remains a user-initiated
+sign-in check; no test email was sent automatically.
 
 ## Implemented
 
@@ -22,10 +30,10 @@ moderation remain. Historical Postgres migrations and tests are under `supabase/
 
 ## Before launch
 
-Follow [CLOUDFLARE.md](CLOUDFLARE.md): choose an origin; create D1/R2; configure a stable auth
-secret, enabled providers, callbacks and verified sender; migrate/rehearse existing data and
-photo objects; deploy; test real provider flows. Configure production tiles and real credited photos.
-Legacy sessions need a new sign-in. Importing database rows does not copy stored images.
+Follow [CLOUDFLARE.md](CLOUDFLARE.md) for the deployed resource IDs and redeployment commands.
+Complete a real email sign-in and add real credited photography locations. Configure Google only
+after registering its callback and supplying credentials. Any later legacy import needs rehearsal
+and a separate fresh target; importing database rows does not copy stored images.
 
 ## Product limits
 

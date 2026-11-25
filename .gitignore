@@ -4,6 +4,7 @@ dist/
 coverage/
 .react-router/
 .cloudflare/
+photospots.secrets.json
 .dev.vars*
 !.dev.vars.example
 .DS_Store

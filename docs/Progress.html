@@ -259,10 +259,10 @@
 <div class="wrap">
   <header class="masthead">
     <p class="eyebrow">Photospots · launch tracker · 25 Nov 2026</p>
-    <h1>Workers refactor implemented. Production setup remains.</h1>
+    <h1>Live on Workers. Ready for real locations.</h1>
     <p class="standfirst">
-      The application now targets Workers, D1, private R2 and Better Auth. Launch still requires
-      production resources, provider credentials, any existing-data cutover, map tiles and real photos.
+      Workers, migrated D1, private R2, email sign-in and map tiles are deployed. Complete a real
+      email sign-in and add credited photographs before promoting the map. Google remains optional.
     </p>
   </header>
 
@@ -277,11 +277,11 @@
     </div>
     <div class="tile">
       <span class="tile__value">3</span>
-      <span class="tile__label">D1 migrations, applied locally</span>
+      <span class="tile__label">D1 migrations, applied in production</span>
     </div>
-    <div class="tile tile--blocked">
-      <span class="tile__value">4</span>
-      <span class="tile__label">hard gates before launch</span>
+    <div class="tile tile--go">
+      <span class="tile__value">Live</span>
+      <span class="tile__label">Workers deployment verified</span>
     </div>
   </div>
 
@@ -348,10 +348,9 @@
     </section>
 
     <section>
-      <h2>Before anyone sees it <span class="count">4 hard gates</span></h2>
+      <h2>Deployment and launch checks</h2>
       <p class="section-note">
-        Ordered by what blocks what. The first is a single afternoon's work; the last is the one
-        that actually decides whether the product works.
+        Infrastructure is running. The remaining checks are real inbox delivery and useful content.
       </p>
 
       <div class="group">
@@ -361,38 +360,39 @@
             <div>
               <div class="item__title">Create production D1 and private R2 resources</div>
               <p class="item__why">
-                The source refactor does not create or change production resources. Follow
-                <code>docs/CLOUDFLARE.md</code> and use the returned D1 UUID in deployment configuration.
+                The dedicated <code>photospots</code> database and private
+                <code>photospots-photos</code> bucket are provisioned. Resource IDs are in
+                <code>docs/CLOUDFLARE.md</code>.
               </p>
             </div>
-            <span class="chip chip--blocked">Blocking</span>
+            <span class="chip chip--done">Done</span>
           </li>
           <li class="item">
             <div>
-              <div class="item__title">Apply D1 migrations and rehearse any legacy import</div>
+              <div class="item__title">Apply the three D1 migrations</div>
               <p class="item__why">
-                Apply the three active SQLite migrations. Preserve user IDs and copy photo objects
-                before switching traffic; existing Supabase sessions require a fresh sign-in.
+                All three migrations are applied with standard migration bookkeeping. Development
+                fixtures were not copied. Any later legacy import requires a fresh staging target.
               </p>
             </div>
-            <span class="chip chip--todo">Waiting</span>
+            <span class="chip chip--done">Done</span>
           </li>
           <li class="item">
             <div>
               <div class="item__title">Configure the public origin and Worker secrets</div>
               <p class="item__why">
-                Set <code>AUTH_ORIGIN</code>, a stable <code>BETTER_AUTH_SECRET</code>, and the
-                enabled Google/Resend credentials. Configure OAuth callbacks and a verified sender.
+                The public origin, stable auth secret and domain-restricted Resend credential are
+                configured. Google stays disabled until OAuth credentials and callbacks are supplied.
               </p>
             </div>
-            <span class="chip chip--todo">Waiting</span>
+            <span class="chip chip--done">Done</span>
           </li>
           <li class="item">
             <div>
-              <div class="item__title">Verify sign-in against production</div>
+              <div class="item__title">Complete a real email sign-in</div>
               <p class="item__why">
-                Script it rather than clicking it. Two silent auth bugs in this project were only
-                ever found by driving the magic-link flow end to end.
+                Runtime tests verify sessions, replay protection and logout. Live checks verify
+                origin and authentication guards. Inbox delivery remains a user-initiated check.
               </p>
             </div>
             <span class="chip chip--todo">Waiting</span>
@@ -405,14 +405,13 @@
         <ul class="items">
           <li class="item">
             <div>
-              <div class="item__title">Point <code>MAP_STYLE_URL</code> at a real provider</div>
+              <div class="item__title">Serve the production map and module worker</div>
               <p class="item__why">
-                It currently defaults to MapLibre's demo tiles, which are development-only.
-                Protomaps or MapTiler — both bill flat rather than per map load, which is the right
-                shape for a free product whose core interaction is panning around.
+                OpenFreeMap supplies the production style and tiles. The Vite-emitted MapLibre
+                worker, tiles and fonts load successfully in the deployed browser.
               </p>
             </div>
-            <span class="chip chip--blocked">Blocking</span>
+            <span class="chip chip--done">Done</span>
           </li>
         </ul>
       </div>
@@ -426,7 +425,7 @@
               <p class="item__why">
                 The spec names this the dominant risk, and it is not a software risk. The map is
                 worthless with twenty spots and useful with two hundred; someone who opens it and
-                finds four pins does not come back. Six seeded spots exist today.
+                finds four pins does not come back. Six local fixtures remain development-only.
               </p>
             </div>
             <span class="chip chip--blocked">Blocking</span>
@@ -438,10 +437,9 @@
   </div>
 
   <section>
-    <h2>Worth doing before real users, not before launch</h2>
+    <h2>Operations and follow-ups</h2>
     <p class="section-note">
-      None of these stops a launch. Two are privacy or abuse questions that get worse with traffic,
-      so they are worth doing while the traffic is still friends.
+      Privacy and maintenance are implemented. Remaining items concern abuse controls and editing polish.
     </p>
     <div class="table-wrap">
       <table>
@@ -451,8 +449,8 @@
         <tbody>
           <tr>
             <td>Ballot privacy</td>
-            <td><code>signals.profile_id</code> is readable by anyone, so who voted for what can be enumerated. Vote counts are meant to be public; the per-person ballot is not.</td>
-            <td><span class="chip chip--todo">Privacy</span></td>
+            <td>D1 is private. Public repositories expose counts and the current viewer's answer, not other users' ballots.</td>
+            <td><span class="chip chip--done">Done</span></td>
           </tr>
           <tr>
             <td>Report rate limiting</td>
@@ -461,13 +459,13 @@
           </tr>
           <tr>
             <td>Schedule <code>refresh:hot</code></td>
-            <td>The “what's happening now” ranking works and is tested, but nothing runs it, so hot scores never move.</td>
-            <td><span class="chip chip--todo">Ops</span></td>
+            <td>Hourly Worker maintenance refreshes lifetime and hot rankings at minute 17.</td>
+            <td><span class="chip chip--done">Done</span></td>
           </tr>
           <tr>
             <td>Sweep orphaned photos</td>
-            <td>Photos upload before the spot exists, so an abandoned submission leaves files in storage that nothing ever collects.</td>
-            <td><span class="chip chip--todo">Ops</span></td>
+            <td>Expired unattached receipts are claimed and their R2 objects deleted by scheduled maintenance, with retries on failure.</td>
+            <td><span class="chip chip--done">Done</span></td>
           </tr>
           <tr>
             <td>Replace a photo on an existing spot</td>
@@ -522,8 +520,9 @@
 
   <footer>
     <p>
-      Cloudflare refactor changes remain in the existing checkout. This implementation has not
-      provisioned production resources, imported production data or deployed a Worker.
+      Deployed November 25, 2026 at
+      <a href="https://photospots.luisisthejuarez.workers.dev">photospots.luisisthejuarez.workers.dev</a>.
+      Source and deployment documentation are pushed to GitHub. Production began without local fixtures.
     </p>
     <p>
       Detail lives in <code>docs/STATUS.md</code>; the traps this codebase has already hit are in

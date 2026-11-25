@@ -4,6 +4,9 @@ A map of photography locations, cultivated by local photographers. Launching in 
 Michigan, with shoot-type filters, practical location details, scouting and session photos,
 votes, comments, studio claims, and moderation.
 
+**Live:** [photospots.luisisthejuarez.workers.dev](https://photospots.luisisthejuarez.workers.dev).
+Email magic-link sign-in is configured; Google requires OAuth credentials.
+
 Runs on **Cloudflare Workers, D1 and private R2**, with **Better Auth** for Google sign-in and
 email magic links delivered by Resend. The browser uses same-origin Worker endpoints;
 database bindings, authorization and storage credentials stay on the server.

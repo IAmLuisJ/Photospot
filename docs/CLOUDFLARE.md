@@ -43,10 +43,51 @@ still need testing with your provider accounts before launch.
 
 ## Production setup
 
+### Current deployment
+
+Provisioned and deployed November 25, 2026:
+
+| Setting         | Value                                                 |
+| --------------- | ----------------------------------------------------- |
+| Public origin   | `https://photospots.luisisthejuarez.workers.dev`      |
+| Worker          | `photospots`                                          |
+| D1 database     | `photospots` / `8705add4-21b4-425c-b751-60542fa6e7c6` |
+| R2 bucket       | `photospots-photos`, private; public domain disabled  |
+| Email sender    | `Photospots <photos@iamluisj.com>`                    |
+| Map style       | `https://tiles.openfreemap.org/styles/liberty`        |
+| Maintenance     | `17 * * * *`                                          |
+| Deployed source | Git commit `ce57f6f850a46c37c9244b405801a8c1dd3741ed` |
+
+The database has all three migrations, with the standard `d1_migrations` bookkeeping table.
+Development fixtures were not copied. Email uses a domain-restricted Resend sending key;
+Google is disabled until both OAuth credentials are supplied. Live inbox delivery has not been
+triggered automatically. The map's module worker is emitted by Vite and serves successfully.
+
+For redeployment, reuse the existing resources and stable authentication secret. The current
+checkout has an owner-only `photospots.secrets.json` file, explicitly ignored by Git. Do not commit
+or regenerate it on every release. A fresh checkout needs the existing credentials supplied securely.
+
+```bash
+npx cf auth login
+export D1_DATABASE_ID='8705add4-21b4-425c-b751-60542fa6e7c6'
+export AUTH_ORIGIN='https://photospots.luisisthejuarez.workers.dev'
+export PHOTOS_BUCKET_NAME='photospots-photos'
+export AUTH_EMAIL_FROM='Photospots <photos@iamluisj.com>'
+export MAP_STYLE_URL='https://tiles.openfreemap.org/styles/liberty'
+npm run check:deploy
+npm run deploy -- --secrets-file photospots.secrets.json
+```
+
+The first deployment used the connected Cloudflare API because the local CLI had no active
+login. CLI login is required for the redeployment command above. The setup steps below are for
+new environments; skip resource creation when deploying updates to the existing environment.
+
+### New environments
+
 Choose the final custom-domain or `workers.dev` origin before configuring callbacks.
 
 ```bash
-npx cf login
+npx cf auth login
 npx cf d1 create --name photospots
 npx cf r2 buckets create --name photospots-photos
 ```

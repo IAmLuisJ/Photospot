@@ -50,6 +50,11 @@ Pinned React Router 8.5.3 and Cloudflare CLI/plugin rc.5 agree on build output p
 did not. Build and exercise the Worker, not only the browser assets. Run type generation before
 building because it can clear Cloudflare output.
 
+MapLibre v6 also needs an explicit module-worker URL in Vite. Import
+`maplibre-gl/dist/maplibre-gl-worker.mjs?worker&url` and pass it to `setWorkerUrl`.
+Otherwise its relative default requests a file that was never emitted, producing a blank map
+despite successful SSR and unit tests. Verify the actual worker request and map tiles in a browser.
+
 `npm test` uses real SQLite constraints/transactions behind a D1 interface and actual Better Auth
 handlers with captured delivery. `npm run test:runtime` separately uses the production bundle and
 native D1/R2 over HTTP in workerd. No Supabase/Docker service is required.

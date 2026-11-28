@@ -1,5 +1,11 @@
 import { useCallback, useMemo, useState } from "react";
-import { Form, Link, useSearchParams, data as routeData } from "react-router";
+import {
+  Form,
+  Link,
+  useNavigation,
+  useSearchParams,
+  data as routeData,
+} from "react-router";
 import { getRequestContext } from "~/lib/request-context.server";
 import { getCurrentProfile } from "~/data/profiles";
 import {
@@ -11,6 +17,7 @@ import {
   parseExploreFilters,
   filtersToSearchParams,
   type ExploreFilters,
+  DEFAULT_VIEWPORT,
 } from "~/domain/filters/explore-filters";
 import {
   hasAnyAttributeFilter,
@@ -31,7 +38,9 @@ import {
 import {
   FilterBar,
   hiddenByFiltersMessage,
+  activeFilterCount,
 } from "~/components/explore/FilterBar";
+import { Icon } from "~/components/Icon";
 import type { Route } from "./+types/home";
 import "maplibre-gl/dist/maplibre-gl.css";
 
@@ -46,9 +55,8 @@ export function meta() {
   ];
 }
 
-export async function loader({ request, context }: Route.LoaderArgs) {
+export async function loader({ request, context, url }: Route.LoaderArgs) {
   const { store, headers, env } = await getRequestContext(request, context);
-  const url = new URL(request.url);
 
   // Read the raw parameter before parseExploreFilters normalises it: it turns
   // an absent view into "split", which is indistinguishable from an explicit
@@ -126,7 +134,6 @@ export async function loader({ request, context }: Route.LoaderArgs) {
 
 export default function Explore({ loaderData }: Route.ComponentProps) {
   const {
-    profile,
     spots,
     shootTypes,
     filters,
@@ -134,35 +141,52 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
     photoBaseUrl,
     mapStyleUrl,
   } = loaderData;
-  const [, setSearchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const navigation = useNavigation();
   const [hovered, setHovered] = useState<string | null>(null);
+  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [mapCenter, setMapCenter] = useState<{
+    lat: number;
+    lng: number;
+  } | null>(null);
+  const isAdding = searchParams.get("add") === "1";
+  const mobileView = searchParams.get("pane") === "map" ? "map" : "photos";
+  const count = activeFilterCount(filters.attributes);
+  const hasFilters =
+    count > 0 || filters.shootTypeId !== null || Boolean(filters.query);
+  const browseParams = new URLSearchParams(searchParams);
+  browseParams.delete("add");
+  const returnTo = browseParams.size ? `/?${browseParams}` : "/";
 
   const update = useCallback(
     (next: Partial<ExploreFilters>) => {
-      // replace: true so panning the map does not fill the back button with
-      // every intermediate viewport.
-      setSearchParams(filtersToSearchParams({ ...filters, ...next }), {
-        replace: true,
-      });
+      const params = filtersToSearchParams({ ...filters, ...next });
+      if (isAdding) params.set("add", "1");
+      if (mobileView === "map") params.set("pane", "map");
+      setSearchParams(params, { replace: true, preventScrollReset: true });
     },
-    [filters, setSearchParams],
+    [filters, isAdding, mobileView, setSearchParams],
   );
 
   const onViewportChange = useCallback(
-    (next: { viewport: ExploreFilters["viewport"]; zoom: number }) =>
-      update(next),
+    (next: {
+      viewport: ExploreFilters["viewport"];
+      zoom: number;
+      center: { lat: number; lng: number };
+    }) => {
+      setMapCenter(next.center);
+      update({ viewport: next.viewport, zoom: next.zoom });
+    },
     [update],
   );
-
-  const onSelect = useCallback((slug: string) => setHovered(slug), []);
-
+  const onSelect = useCallback((slug: string) => setSelectedSlug(slug), []);
   const onAttributesChange = useCallback(
     (attributes: AttributeFilters) => update({ attributes }),
     [update],
   );
-
+  const selected = spots.find((spot) => spot.slug === selectedSlug);
   const hiddenMessage = hiddenByFiltersMessage(hiddenByFilters);
-
   const map = useMemo(
     () => (
       <SpotMap
@@ -170,7 +194,7 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
         viewport={filters.viewport}
         zoom={filters.zoom}
         styleUrl={mapStyleUrl}
-        selectedSlug={hovered ?? undefined}
+        selectedSlug={hovered ?? selectedSlug ?? undefined}
         onViewportChange={onViewportChange}
         onSelect={onSelect}
       />
@@ -181,114 +205,340 @@ export default function Explore({ loaderData }: Route.ComponentProps) {
       filters.zoom,
       mapStyleUrl,
       hovered,
+      selectedSlug,
       onViewportChange,
       onSelect,
     ],
   );
-
-  const results =
-    spots.length === 0 ? (
-      <p className="explore__empty">
-        No spots in view yet. Try zooming out, or clearing the filter.
-        {hiddenMessage && <> {hiddenMessage}</>}
-      </p>
-    ) : (
-      <ul className="explore__list">
-        {spots.map((spot) => (
-          <li key={spot.id}>
-            <SpotCard
-              spot={spot}
-              photoBaseUrl={photoBaseUrl}
-              selected={hovered === spot.slug}
-              variant={filters.view === "gallery" ? "tile" : "row"}
-              onHover={setHovered}
-            />
-          </li>
-        ))}
-      </ul>
-    );
+  const center = mapCenter ?? {
+    lat: (filters.viewport.north + filters.viewport.south) / 2,
+    lng: (filters.viewport.east + filters.viewport.west) / 2,
+  };
+  const submitPath = `/submit?${new URLSearchParams({ lat: center.lat.toFixed(6), lng: center.lng.toFixed(6), from: returnTo })}`;
+  const addParams = new URLSearchParams(searchParams);
+  addParams.set("view", "map");
+  addParams.set("add", "1");
+  const addPath = `/?${addParams}`;
 
   const controls = (
     <>
-      <div className="explore__filters" role="group" aria-label="Shoot type">
-        <button
-          type="button"
-          aria-pressed={filters.shootTypeId === null}
-          onClick={() => update({ shootTypeId: null })}
-        >
-          All
-        </button>
-        {shootTypes.map((t) => (
-          <button
-            key={t.id}
-            type="button"
-            aria-pressed={filters.shootTypeId === t.id}
-            onClick={() => update({ shootTypeId: t.id })}
-          >
-            {t.label}
-          </button>
-        ))}
+      <div className="explore__intro">
+        <p className="eyebrow">A photographer’s field guide</p>
+        <h1>
+          Find your next
+          <br />
+          <em>shoot location.</em>
+        </h1>
+        <p>
+          Good light. A fresh perspective. A place you’ll want to come back to.
+        </p>
       </div>
-
-      <FilterBar filters={filters.attributes} onChange={onAttributesChange} />
-
-      <div className="explore__views" role="group" aria-label="View">
-        {(["split", "map", "gallery"] as const).map((v) => (
-          <button
-            key={v}
-            type="button"
-            aria-pressed={filters.view === v}
-            onClick={() => update({ view: v })}
-          >
-            {v}
-          </button>
-        ))}
-        <button
-          type="button"
-          aria-pressed={filters.sort === "hot"}
-          onClick={() =>
-            update({ sort: filters.sort === "hot" ? "score" : "hot" })
-          }
-        >
-          {filters.sort === "hot" ? "Hot" : "Best"}
-        </button>
-      </div>
-
-      <Link
-        className="explore__add"
-        to={`/submit?lat=${((filters.viewport.north + filters.viewport.south) / 2).toFixed(6)}&lng=${((filters.viewport.east + filters.viewport.west) / 2).toFixed(6)}`}
+      <Form
+        className="area-search"
+        role="search"
+        onSubmit={(event) => {
+          event.preventDefault();
+          update({
+            query: String(new FormData(event.currentTarget).get("q") ?? "")
+              .trim()
+              .slice(0, 120),
+          });
+        }}
       >
-        Add a spot here
-      </Link>
-
-      <div className="explore__account">
-        {profile ? (
-          <Form method="post" action="/auth/logout">
-            <span>{profile.displayName}</span>{" "}
-            <button type="submit">Sign out</button>
-          </Form>
-        ) : (
-          <Link to="/auth/login">Sign in</Link>
+        <label className="sr-only" htmlFor="spot-search">
+          Search spots in this map area
+        </label>
+        <Icon name="search" />
+        <input
+          key={filters.query}
+          id="spot-search"
+          name="q"
+          type="search"
+          defaultValue={filters.query}
+          placeholder="Search spots in this area"
+          maxLength={120}
+        />
+        <button type="submit" aria-label="Search this area">
+          <Icon name="arrow" />
+        </button>
+      </Form>
+      <div className="explore__filter-row">
+        <label className="shoot-filter">
+          <span className="sr-only">Shoot type</span>
+          <select
+            value={filters.shootTypeId ?? ""}
+            onChange={(event) =>
+              update({
+                shootTypeId: event.target.value
+                  ? Number(event.target.value)
+                  : null,
+              })
+            }
+          >
+            <option value="">Any shoot type</option>
+            {shootTypes.map((type) => (
+              <option key={type.id} value={type.id}>
+                {type.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          className={`filter-toggle${count ? " filter-toggle--active" : ""}`}
+          type="button"
+          aria-expanded={filtersOpen}
+          aria-controls="extra-filters"
+          onClick={() => setFiltersOpen(!filtersOpen)}
+        >
+          <Icon name="filter" />
+          Filters{count > 0 && <span className="filter-count">{count}</span>}
+        </button>
+        {hasFilters && (
+          <button
+            className="text-button"
+            type="button"
+            onClick={() =>
+              update({
+                query: "",
+                shootTypeId: null,
+                attributes: NO_ATTRIBUTE_FILTERS,
+              })
+            }
+          >
+            Reset
+          </button>
         )}
       </div>
+      {filtersOpen && (
+        <section
+          id="extra-filters"
+          className="extra-filters"
+          aria-label="More filters"
+        >
+          <FilterBar
+            filters={filters.attributes}
+            onChange={onAttributesChange}
+          />
+          <div className="explore__display">
+            <label>
+              Display
+              <select
+                value={filters.view}
+                onChange={(event) =>
+                  update({ view: event.target.value as ExploreFilters["view"] })
+                }
+              >
+                <option value="split">Photos + map</option>
+                <option value="gallery">Photo gallery</option>
+                <option value="map">Map + compact list</option>
+              </select>
+            </label>
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => setFiltersOpen(false)}
+            >
+              Done
+            </button>
+          </div>
+        </section>
+      )}
     </>
   );
 
-  const resultsWithNotice = (
+  const results = (
     <>
+      <div className="results-heading">
+        <div>
+          <h2>
+            {spots.length} {spots.length === 1 ? "location" : "locations"}
+          </h2>
+          <p>In this map area</p>
+        </div>
+        <label className="sort-control">
+          <span className="sr-only">Sort locations</span>
+          <select
+            value={filters.sort}
+            onChange={(event) =>
+              update({ sort: event.target.value as ExploreFilters["sort"] })
+            }
+          >
+            <option value="score">Top rated</option>
+            <option value="hot">Trending</option>
+          </select>
+        </label>
+      </div>
       {hiddenMessage && spots.length > 0 && (
         <p className="explore__hidden">{hiddenMessage}</p>
       )}
-      {results}
+      {spots.length ? (
+        <ul className="explore__list">
+          {spots.map((spot) => (
+            <li key={spot.id}>
+              <SpotCard
+                spot={spot}
+                photoBaseUrl={photoBaseUrl}
+                selected={hovered === spot.slug || selectedSlug === spot.slug}
+                variant={filters.view === "map" ? "row" : "tile"}
+                onHover={setHovered}
+                returnTo={returnTo}
+              />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="explore__empty">
+          <span className="empty-mark">
+            <Icon name="compass" />
+          </span>
+          <h2>
+            {hasFilters
+              ? "A little room to explore?"
+              : "A fresh patch of the map."}
+          </h2>
+          <p>
+            {hasFilters
+              ? "No locations match just yet. Try another search or clear your filters."
+              : "No locations have been shared here yet. Move or zoom out on the map to keep exploring."}
+          </p>
+          {hiddenMessage && <p className="explore__hidden">{hiddenMessage}</p>}
+          {hasFilters ? (
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() =>
+                update({
+                  query: "",
+                  shootTypeId: null,
+                  attributes: NO_ATTRIBUTE_FILTERS,
+                })
+              }
+            >
+              Clear search & filters
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="button button--secondary"
+              onClick={() =>
+                update({
+                  viewport: {
+                    west: Math.max(
+                      -180,
+                      center.lng -
+                        (filters.viewport.east - filters.viewport.west),
+                    ),
+                    east: Math.min(
+                      180,
+                      center.lng +
+                        (filters.viewport.east - filters.viewport.west),
+                    ),
+                    south: Math.max(
+                      -85,
+                      center.lat -
+                        (filters.viewport.north - filters.viewport.south),
+                    ),
+                    north: Math.min(
+                      85,
+                      center.lat +
+                        (filters.viewport.north - filters.viewport.south),
+                    ),
+                  },
+                  zoom: Math.max(0, filters.zoom - 1),
+                })
+              }
+            >
+              Explore a wider area
+              <Icon name="arrow" />
+            </button>
+          )}
+        </div>
+      )}
+      <div className="explore__contribute">
+        <span>Know a place worth sharing?</span>
+        <Link to={addPath}>
+          Add it to the map
+          <Icon name="plus" />
+        </Link>
+      </div>
     </>
   );
 
   return (
     <ExploreLayout
-      view={filters.view}
-      map={map}
-      results={resultsWithNotice}
+      view={isAdding ? "map" : filters.view}
       controls={controls}
+      results={results}
+      adding={isAdding}
+      loading={navigation.state !== "idle"}
+      resultCount={spots.length}
+      mobileView={mobileView}
+      onMobileViewChange={(view) => {
+        const params = new URLSearchParams(searchParams);
+        if (view === "map") params.set("pane", "map");
+        else params.delete("pane");
+        setSearchParams(params, { replace: true, preventScrollReset: true });
+      }}
+      map={
+        <>
+          {map}
+          {!isAdding && (
+            <div className="map-note">
+              <span className="map-note__dot" />
+              Move the map to explore
+            </div>
+          )}
+          {!isAdding && (
+            <button
+              type="button"
+              className="map-reset"
+              onClick={() => update({ viewport: DEFAULT_VIEWPORT, zoom: 12 })}
+            >
+              <Icon name="pin" />
+              Grand Rapids
+            </button>
+          )}
+          {selected && !isAdding && (
+            <aside className="map-preview" aria-label="Selected location">
+              <SpotCard
+                spot={selected}
+                photoBaseUrl={photoBaseUrl}
+                variant="row"
+                returnTo={returnTo}
+              />
+              <button
+                className="map-preview__close"
+                type="button"
+                onClick={() => setSelectedSlug(null)}
+                aria-label="Close location preview"
+              >
+                <Icon name="close" />
+              </button>
+            </aside>
+          )}
+          {isAdding && (
+            <>
+              <div className="map-crosshair" aria-hidden="true">
+                <Icon name="pin" />
+              </div>
+              <div className="pin-picker">
+                <p className="eyebrow">Start with the place</p>
+                <h1>Move the map to your spot.</h1>
+                <p>The pin marks the location you’ll share.</p>
+                <div>
+                  <Link className="button" to={submitPath}>
+                    Use this location
+                    <Icon name="arrow" />
+                  </Link>
+                  <Link className="text-button" to={returnTo}>
+                    Cancel
+                  </Link>
+                </div>
+              </div>
+            </>
+          )}
+        </>
+      }
     />
   );
 }

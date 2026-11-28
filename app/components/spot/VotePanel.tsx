@@ -1,4 +1,5 @@
-import { Link, useFetcher } from "react-router";
+import { Link, useFetcher, useLocation } from "react-router";
+import { loginPath } from "~/lib/navigation";
 import {
   applyPendingUpvote,
   applyPendingShootAgain,
@@ -16,7 +17,9 @@ import type { ShootTypeVotes } from "~/data/signals";
  * holds the pending submission, and a second copy of it is a second thing to
  * keep in sync — which is where optimistic UI usually goes wrong.
  */
-export function pendingUpvoteFrom(formData: FormData | undefined): PendingUpvote | null {
+export function pendingUpvoteFrom(
+  formData: FormData | undefined,
+): PendingUpvote | null {
   const intent = formData?.get("intent");
   if (intent !== "upvote" && intent !== "unvote") return null;
 
@@ -32,7 +35,9 @@ export function pendingUpvoteFrom(formData: FormData | undefined): PendingUpvote
 }
 
 /** `undefined` is nothing in flight; `null` is an explicit retraction. */
-export function pendingShootAgainFrom(formData: FormData | undefined): PendingShootAgain {
+export function pendingShootAgainFrom(
+  formData: FormData | undefined,
+): PendingShootAgain {
   if (formData?.get("intent") !== "shoot-again") return undefined;
 
   const answer = formData.get("answer");
@@ -43,7 +48,9 @@ export function pendingShootAgainFrom(formData: FormData | undefined): PendingSh
 }
 
 export function upvoteLabel(row: ShootTypeVoteState): string {
-  return row.viewerUpvoted ? `Remove your ${row.label} upvote` : `Upvote ${row.label}`;
+  return row.viewerUpvoted
+    ? `Remove your ${row.label} upvote`
+    : `Upvote ${row.label}`;
 }
 
 /**
@@ -62,8 +69,12 @@ export function voteTotalsLine(totals: {
   const upvotes = `${totals.shootTypeUpvoteCount} ${
     totals.shootTypeUpvoteCount === 1 ? "upvote" : "upvotes"
   }`;
-  const parts = [upvotes, `${totals.shootAgainYesCount} would shoot here again`];
-  if (totals.shootAgainNoCount > 0) parts.push(`${totals.shootAgainNoCount} would not`);
+  const parts = [
+    upvotes,
+    `${totals.shootAgainYesCount} would shoot here again`,
+  ];
+  if (totals.shootAgainNoCount > 0)
+    parts.push(`${totals.shootAgainNoCount} would not`);
   return parts.join(" · ");
 }
 
@@ -74,9 +85,18 @@ export function voteTotalsLine(totals: {
  * route's action type into a component the route imports is a cycle, and the
  * error is the only part of the response this reads.
  */
-function ShootTypeRow({ row, signedIn }: { row: ShootTypeVotes; signedIn: boolean }) {
+function ShootTypeRow({
+  row,
+  signedIn,
+}: {
+  row: ShootTypeVotes;
+  signedIn: boolean;
+}) {
   const fetcher = useFetcher<{ error?: string }>();
-  const [shown] = applyPendingUpvote([row], pendingUpvoteFrom(fetcher.formData));
+  const [shown] = applyPendingUpvote(
+    [row],
+    pendingUpvoteFrom(fetcher.formData),
+  );
 
   return (
     <li className="vote-panel__row">
@@ -84,7 +104,11 @@ function ShootTypeRow({ row, signedIn }: { row: ShootTypeVotes; signedIn: boolea
       <span className="vote-panel__count">{shown.upvoteCount}</span>
       {signedIn ? (
         <fetcher.Form method="post">
-          <input type="hidden" name="intent" value={shown.viewerUpvoted ? "unvote" : "upvote"} />
+          <input
+            type="hidden"
+            name="intent"
+            value={shown.viewerUpvoted ? "unvote" : "upvote"}
+          />
           <input type="hidden" name="shootTypeId" value={row.shootTypeId} />
           <button type="submit" aria-pressed={shown.viewerUpvoted}>
             {upvoteLabel(shown)}
@@ -106,7 +130,11 @@ export function VotePanel({
   signedIn: boolean;
 }) {
   const fetcher = useFetcher<{ error?: string }>();
-  const shown = applyPendingShootAgain(shootAgain, pendingShootAgainFrom(fetcher.formData));
+  const shown = applyPendingShootAgain(
+    shootAgain,
+    pendingShootAgainFrom(fetcher.formData),
+  );
+  const location = useLocation();
 
   return (
     <section className="vote-panel">
@@ -129,10 +157,20 @@ export function VotePanel({
       {signedIn ? (
         <fetcher.Form method="post" className="vote-panel__again-form">
           <input type="hidden" name="intent" value="shoot-again" />
-          <button type="submit" name="answer" value="yes" aria-pressed={shown.viewerAnswer === 1}>
+          <button
+            type="submit"
+            name="answer"
+            value="yes"
+            aria-pressed={shown.viewerAnswer === 1}
+          >
             Yes
           </button>
-          <button type="submit" name="answer" value="no" aria-pressed={shown.viewerAnswer === 0}>
+          <button
+            type="submit"
+            name="answer"
+            value="no"
+            aria-pressed={shown.viewerAnswer === 0}
+          >
             No
           </button>
           {shown.viewerAnswer !== null && (
@@ -144,7 +182,10 @@ export function VotePanel({
         </fetcher.Form>
       ) : (
         <p>
-          <Link to="/auth/login">Sign in</Link> to vote or comment.
+          <Link to={loginPath(location.pathname + location.search)}>
+            Sign in
+          </Link>{" "}
+          to vote or comment.
         </p>
       )}
     </section>

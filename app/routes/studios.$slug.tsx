@@ -1,3 +1,4 @@
+import { loginPath } from "~/lib/navigation";
 import { Form, Link, data as routeData } from "react-router";
 import { getRequestContext } from "~/lib/request-context.server";
 import { getCurrentProfile } from "~/data/profiles";
@@ -93,7 +94,7 @@ export default function StudioPage({
   const viewerOwns = profile !== null && studio?.claimedBy === profile.id;
 
   return (
-    <main className="spot-detail">
+    <main id="main-content" className="spot-detail">
       <p>
         <Link to={`/spots/${spot.slug}`}>← Photos, votes and comments</Link>
       </p>
@@ -159,8 +160,8 @@ export default function StudioPage({
           </>
         ) : (
           <p>
-            <Link to="/auth/login">Sign in</Link> with the email on this listing
-            to claim it.
+            <Link to={loginPath(`/studios/${spot.slug}`)}>Sign in</Link> with
+            the email on this listing to claim it.
           </p>
         )}
       </section>
@@ -170,7 +171,7 @@ export default function StudioPage({
 
 export function ErrorBoundary() {
   return (
-    <main className="spot-detail">
+    <main id="main-content" className="spot-detail">
       <h1>Studio not found</h1>
       <p>It may have been removed, or this may not be a studio listing.</p>
       <p>

@@ -124,6 +124,12 @@ try {
   const home = await send("/");
   assert.equal(home.status, 200);
   assert.match(await home.text(), /Millennium Park Meadow/);
+  const dataRedirect = await send(
+    "/submit.data?lat=0&lng=0&_routes=routes/submit",
+  );
+  const redirectBody = await dataRedirect.text();
+  assert.match(redirectBody, /returnTo=%2Fsubmit%3Flat%3D0/);
+  assert.doesNotMatch(redirectBody, /returnTo=%2Fsubmit\.data/);
   const denied = await send("/uploads", form({}));
   assert.equal(denied.status, 401);
   await denied.body?.cancel();
@@ -140,16 +146,19 @@ try {
     google.headers.getSetCookie().length,
     "OAuth state cookies must survive the app redirect",
   );
-  const started = await send("/api/auth/sign-in/magic-link", {
-    method: "POST",
-    headers: { Origin: origin, "Content-Type": "application/json" },
-    body: JSON.stringify({ email: "runtime@example.com", callbackURL: "/" }),
-  });
-  assert.equal(started.status, 200, await started.text());
+  const returnTo = "/submit?lat=42.96&lng=-85.67";
+  const started = await send(
+    "/auth/login",
+    form({ intent: "magic-link", email: "runtime@example.com", returnTo }),
+  );
+  assert.equal(started.status, 200);
+  assert.match(await started.text(), /Check your inbox/);
   assert.equal(deliveries.length, 1);
   const link = deliveries[0].text.match(/http:\/\/localhost:5173\/\S+/)![0];
   const verified = await runtime.dispatchFetch(link, { redirect: "manual" });
   assert.equal(verified.status, 302);
+  const returned = new URL(verified.headers.get("Location")!, origin);
+  assert.equal(returned.pathname + returned.search, returnTo);
   const cookie = verified.headers
     .getSetCookie()
     .map((c) => c.split(";")[0])

@@ -10,6 +10,7 @@ export type ExploreView = "split" | "map" | "gallery";
 export type ExploreSort = "score" | "hot";
 
 export interface ExploreFilters {
+  query: string;
   viewport: Bounds;
   zoom: number;
   shootTypeId: number | null;
@@ -26,13 +27,14 @@ export interface ExploreFilters {
  * five of six spots with no indication the sixth existed.
  */
 export const DEFAULT_VIEWPORT: Bounds = Object.freeze({
-  west: -85.7500,
-  south: 42.9100,
-  east: -85.5900,
-  north: 43.0300,
+  west: -85.75,
+  south: 42.91,
+  east: -85.59,
+  north: 43.03,
 });
 
 export const DEFAULT_FILTERS: ExploreFilters = Object.freeze({
+  query: "",
   viewport: DEFAULT_VIEWPORT,
   zoom: 12,
   shootTypeId: null,
@@ -65,7 +67,12 @@ const readViewport = (params: URLSearchParams): Bounds => {
     return DEFAULT_VIEWPORT;
   }
   const inRange =
-    west >= -180 && east <= 180 && south >= -90 && north <= 90 && west < east && south < north;
+    west >= -180 &&
+    east <= 180 &&
+    south >= -90 &&
+    north <= 90 &&
+    west < east &&
+    south < north;
 
   return inRange ? { west, south, east, north } : DEFAULT_VIEWPORT;
 };
@@ -82,18 +89,27 @@ export function parseExploreFilters(params: URLSearchParams): ExploreFilters {
   const sort = params.get("sort");
 
   return {
+    query: (params.get("q") ?? "").trim().slice(0, 120),
     viewport: readViewport(params),
-    zoom: zoomRaw === null ? DEFAULT_FILTERS.zoom : Math.min(22, Math.max(0, zoomRaw)),
+    zoom:
+      zoomRaw === null
+        ? DEFAULT_FILTERS.zoom
+        : Math.min(22, Math.max(0, zoomRaw)),
     shootTypeId: typeRaw !== null && Number.isInteger(typeRaw) ? typeRaw : null,
-    sort: sort !== null && SORTS.includes(sort) ? (sort as ExploreSort) : "score",
-    view: view !== null && VIEWS.includes(view) ? (view as ExploreView) : "split",
+    sort:
+      sort !== null && SORTS.includes(sort) ? (sort as ExploreSort) : "score",
+    view:
+      view !== null && VIEWS.includes(view) ? (view as ExploreView) : "split",
     attributes: parseAttributeFilters(params),
   };
 }
 
 /** Only non-default values are written, so a share link stays readable. */
-export function filtersToSearchParams(filters: ExploreFilters): URLSearchParams {
+export function filtersToSearchParams(
+  filters: ExploreFilters,
+): URLSearchParams {
   const params = new URLSearchParams();
+  if (filters.query) params.set("q", filters.query);
   const { viewport: v } = filters;
 
   if (
@@ -107,8 +123,10 @@ export function filtersToSearchParams(filters: ExploreFilters): URLSearchParams 
     params.set("e", String(round6(v.east)));
     params.set("n", String(round6(v.north)));
   }
-  if (filters.zoom !== DEFAULT_FILTERS.zoom) params.set("z", String(filters.zoom));
-  if (filters.shootTypeId !== null) params.set("type", String(filters.shootTypeId));
+  if (filters.zoom !== DEFAULT_FILTERS.zoom)
+    params.set("z", String(filters.zoom));
+  if (filters.shootTypeId !== null)
+    params.set("type", String(filters.shootTypeId));
   if (filters.sort !== DEFAULT_FILTERS.sort) params.set("sort", filters.sort);
 
   // `view` is written unconditionally, unlike everything else here. Once a

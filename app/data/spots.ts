@@ -96,6 +96,14 @@ export async function listSpotsInViewport(
     "s.lng BETWEEN ? AND ?",
   ];
   const args: (string | number)[] = [v.south, v.north, v.west, v.east];
+  if (filters.query) {
+    // instr treats %, _ and quotes as literal search text. Apply before LIMIT
+    // so a matching spot is not lost behind higher-ranked unrelated results.
+    conditions.push(
+      "instr(lower(s.name || ' ' || coalesce(s.locality,'') || ' ' || coalesce(s.region,'')), lower(?)) > 0",
+    );
+    args.push(filters.query);
+  }
   if (shootTypeId !== null) {
     conditions.push(
       "EXISTS(SELECT 1 FROM spot_shoot_types st WHERE st.spot_id=s.id AND st.shoot_type_id=?)",

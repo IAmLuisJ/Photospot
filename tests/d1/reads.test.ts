@@ -57,6 +57,27 @@ describe("D1 public reads", () => {
     );
     expect(rows.map((s) => s.id)).toEqual([good.id]);
   });
+  it("searches names and localities before limiting, with literal user text", async () => {
+    await addSpot(t.db, userId, { name: "Unrelated", score: 100 });
+    const bridge = await addSpot(t.db, userId, {
+      name: "Blue Bridge",
+      locality: "Downtown",
+      score: 1,
+    });
+    for (const query of ["blue", "BRIDGE", "downtown"]) {
+      const rows = await listSpotsInViewport(
+        ctx,
+        { ...DEFAULT_FILTERS, query },
+        1,
+      );
+      expect(rows.map((spot) => spot.id)).toEqual([bridge.id]);
+    }
+    for (const query of ["%", "_", "' OR 1=1 --"]) {
+      expect(
+        await listSpotsInViewport(ctx, { ...DEFAULT_FILTERS, query }),
+      ).toEqual([]);
+    }
+  });
   it("filters unknown attributes and preserves false versus null on details", async () => {
     const no = await addSpot(t.db, userId, {
       dog_friendly: 0,

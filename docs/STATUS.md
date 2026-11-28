@@ -1,6 +1,6 @@
 # Project status
 
-Updated November 25, 2026. Deployed to
+Updated November 27, 2026. Deployed to
 [photospots.luisisthejuarez.workers.dev](https://photospots.luisisthejuarez.workers.dev)
 with Workers, migrated D1, private R2, Better Auth and Resend email links. Google sign-in is
 disabled until OAuth credentials are configured. Development fixtures were not copied to production.
@@ -9,12 +9,24 @@ Source was published through the connected GitHub account because this session c
 local Git metadata. The original checkout's files remain available, but its Git status may still
 show the published changes until the checkout is synchronized locally.
 
-Verification: 333 tests passing (275 unit, 58 integration), TypeScript checks, production build,
+Verification: 350 tests passing (288 unit, 62 integration), TypeScript checks, production build,
 and native workerd HTTP smoke. Production dependency audit reports zero known vulnerabilities.
 Independent review findings were addressed with regression coverage and cutover documentation.
 Live checks confirmed the homepage, sign-in page, session API, private media behavior, and map
 worker/tile loading. The maintenance cron is enabled. Real email delivery remains a user-initiated
 sign-in check; no test email was sent automatically.
+
+## Main user journey
+
+The interface now prioritizes photographers finding a shoot location: browse photos alongside
+the map, open a location, check practical details, and get directions. Search, shoot type and
+one Filters control replace the wall of controls. Advanced filters and community actions expand
+when needed. Phones have explicit photo/map controls; return links preserve search, filters,
+viewport and the mobile pane.
+
+Adding a location starts with a centered map pin. Sign-in preserves that pin and returns to the
+submission form. Photo uploads show previews, credits and rights confirmation; practical details
+stay optional. Local browser checks use mocked email delivery and development images only.
 
 ## Implemented
 

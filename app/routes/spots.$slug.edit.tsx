@@ -10,6 +10,7 @@ import {
   parseOptionalBool,
 } from "~/components/spot/AttributeFields";
 import type { Route } from "./+types/spots.$slug.edit";
+import { loginPath } from "~/lib/navigation";
 
 export function meta({ loaderData }: Route.MetaArgs) {
   return [
@@ -21,15 +22,22 @@ export function meta({ loaderData }: Route.MetaArgs) {
   ];
 }
 
-export async function loader({ request, params, context }: Route.LoaderArgs) {
+export async function loader({
+  request,
+  params,
+  context,
+  url,
+}: Route.LoaderArgs) {
   const { store, headers, env } = await getRequestContext(request, context);
   const profile = await getCurrentProfile(store);
-  if (!profile) throw redirect("/auth/login", { headers });
+  if (!profile) {
+    throw redirect(loginPath(url.pathname + url.search), { headers });
+  }
 
   const spot = await getSpotBySlug(store, params.slug);
   if (!spot) throw new Response("Not found", { status: 404, headers });
 
-  return routeData({ spot }, { headers });
+  return routeData({ spot, profile }, { headers });
 }
 
 export async function action({ request, params, context }: Route.ActionArgs) {
@@ -113,7 +121,7 @@ export default function EditSpot({
   const { spot } = loaderData;
 
   return (
-    <main className="spot-detail">
+    <main id="main-content" className="spot-detail">
       <p>
         <Link to={`/spots/${spot.slug}`}>← Back to {spot.name}</Link>
       </p>
@@ -189,7 +197,7 @@ export default function EditSpot({
 
 export function ErrorBoundary() {
   return (
-    <main className="spot-detail">
+    <main id="main-content" className="spot-detail">
       <h1>Spot not found</h1>
       <p>
         <Link to="/">← Back to the map</Link>

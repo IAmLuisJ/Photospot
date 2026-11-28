@@ -19,6 +19,13 @@ import { ReportButton, reportIntentFrom } from "~/components/spot/ReportButton";
 import { fileReport } from "~/data/reports";
 import { CommentThread } from "~/components/spot/CommentThread";
 import type { Route } from "./+types/spots.$slug";
+import { directionsUrl, exploreReturnTo } from "~/lib/navigation";
+import {
+  COST_TYPE_OPTIONS,
+  labelForAccessibility,
+  labelForTerrain,
+} from "~/domain/spots/attributes";
+import { Icon } from "~/components/Icon";
 
 // `loaderData`, not `data` — renamed in React Router v8. It is optional here
 // because this route has an ErrorBoundary, so meta() also runs for the 404.
@@ -66,6 +73,7 @@ export async function loader({ request, params, context }: Route.LoaderArgs) {
         viewerAnswer: viewerShootAgain,
       },
       comments,
+      returnTo: exploreReturnTo(new URL(request.url).searchParams.get("from")),
     },
     { headers },
   );
@@ -201,142 +209,226 @@ export default function SpotDetailPage({ loaderData }: Route.ComponentProps) {
     shootTypeVotes,
     shootAgain,
     comments,
+    returnTo,
   } = loaderData;
   const place = [spot.locality, spot.region].filter(Boolean).join(", ");
-
-  // Matches spots_update: the submitter, the listing owner, or an admin. The
-  // action refuses anyone else politely, but the link should not be there at
-  // all — plan 5 found it offered to every signed-in user on every spot.
   const canEdit =
     profile !== null &&
     (profile.id === spot.createdBy ||
       profile.id === spot.ownerProfileId ||
       profile.role === "admin");
-
+  const cost =
+    COST_TYPE_OPTIONS.find((option) => option.value === spot.costType)?.label ??
+    spot.costType;
   return (
-    <main className="spot-detail">
-      <p>
-        <Link to="/">← Back to the map</Link>
-      </p>
-
-      <h1>{spot.name}</h1>
-      {place && <p className="spot-detail__place">{place}</p>}
-      {spot.description && (
-        <p className="spot-detail__description">{spot.description}</p>
-      )}
-
-      <p className="spot-detail__signals">{voteTotalsLine(spot)}</p>
-
-      <dl className="spot-detail__facts">
-        <Detail label="Cost" value={spot.costType} />
-        <Detail label="Cost notes" value={spot.costNotes} />
-        <Detail label="Hours" value={spot.hoursNotes} />
-        <Detail
-          label="Walk from parking"
-          value={spot.walkMinutes === null ? null : `${spot.walkMinutes} min`}
-        />
-        <Detail label="Parking" value={spot.parkingNotes} />
-        <Detail label="Terrain" value={list(spot.terrain)} />
-        <Detail label="Accessibility" value={list(spot.accessibility)} />
-        <Detail label="Best light" value={list(spot.bestLight)} />
-        <Detail label="Best seasons" value={list(spot.bestSeasons)} />
-        <Detail
-          label="Max group"
-          value={spot.maxGroupSize === null ? null : String(spot.maxGroupSize)}
-        />
-        <Detail
-          label="Dog friendly"
-          value={
-            spot.dogFriendly === null ? null : spot.dogFriendly ? "Yes" : "No"
-          }
-        />
-      </dl>
-
-      {spot.permitUrl && (
-        <p>
-          <a href={spot.permitUrl} rel="noreferrer noopener" target="_blank">
-            Permit information
-          </a>
-        </p>
-      )}
-
-      {media.photos.length > 0 && (
-        <section className="spot-detail__photos">
-          <h2>Photos</h2>
-          <ul>
-            {media.photos.map((p) => (
-              <li key={p.id}>
+    <main id="main-content" className="spot-detail">
+      <Link className="back-link" to={returnTo}>
+        <Icon name="back" />
+        Back to locations
+      </Link>
+      <header className="spot-detail__header">
+        <div>
+          <p className="eyebrow">
+            {spot.kind === "studio" ? "Studio" : "Outdoor location"}
+          </p>
+          <h1>{spot.name}</h1>
+          {place && (
+            <p className="spot-detail__place">
+              <Icon name="pin" />
+              {place}
+            </p>
+          )}
+        </div>
+        <a
+          className="button"
+          href={directionsUrl(spot.position)}
+          rel="noreferrer noopener"
+          target="_blank"
+        >
+          Get directions
+          <Icon name="arrow" />
+        </a>
+      </header>
+      {media.photos.length > 0 ? (
+        <section className="spot-detail__photos" aria-label="Location photos">
+          <div className="spot-detail__photo-strip" tabIndex={0}>
+            {media.photos.map((photo) => (
+              <figure key={photo.id}>
                 <img
-                  src={photoUrl(photoBaseUrl, p.storagePath) ?? ""}
-                  alt={p.caption ?? ""}
-                  loading="lazy"
+                  src={photoUrl(photoBaseUrl, photo.storagePath) ?? ""}
+                  alt={
+                    photo.caption ??
+                    `${spot.name} — ${photo.kind === "session" ? "session photo" : "scouting photo"}`
+                  }
+                  loading={photo === media.photos[0] ? "eager" : "lazy"}
                 />
-                <p>
-                  {p.kind === "session" ? "Session" : "Scouting"}
-                  {p.creditName && <> · {p.creditName}</>}
-                </p>
-                {/* Spec §4.3: session photos show real families, so the
-                    takedown path has to reach individual photos. */}
-                <ReportButton
-                  targetType="photo"
-                  targetId={p.id}
-                  signedIn={profile !== null}
-                />
-              </li>
+                <figcaption>
+                  <span>
+                    {photo.kind === "session" ? "Session" : "Scouting"}
+                    {photo.creditName && ` · ${photo.creditName}`}
+                  </span>
+                  <ReportButton
+                    targetType="photo"
+                    targetId={photo.id}
+                    signedIn={profile !== null}
+                  />
+                </figcaption>
+              </figure>
             ))}
-          </ul>
+          </div>
+          {media.photos.length > 1 && (
+            <p className="photo-hint">
+              {media.photos.length} photos · Scroll to explore
+              <Icon name="arrow" />
+            </p>
+          )}
         </section>
+      ) : (
+        <div className="spot-detail__no-photo">
+          <Icon name="photos" />
+          <p>This location is waiting for its first photo.</p>
+        </div>
       )}
-
-      {media.galleryLinks.length > 0 && (
-        <section>
-          <h2>Full galleries</h2>
-          <ul>
-            {media.galleryLinks.map((l) => (
-              <li key={l.id}>
-                <a href={l.url} target="_blank" rel="noreferrer noopener">
-                  {l.title}
+      <div className="spot-detail__body">
+        <div className="spot-detail__overview">
+          <p className="eyebrow">The lay of the land</p>
+          <h2>A little about this place.</h2>
+          <p>
+            {spot.description ||
+              "The map pin is a starting point. Check access and any local requirements before your visit."}
+          </p>
+          {shootTypeVotes.length > 0 && (
+            <div className="spot-detail__shoot-types" aria-label="Shoot types">
+              {shootTypeVotes.map((type) => (
+                <span key={type.shootTypeId}>{type.label}</span>
+              ))}
+            </div>
+          )}
+          {(spot.shootTypeUpvoteCount > 0 ||
+            spot.shootAgainYesCount > 0 ||
+            spot.shootAgainNoCount > 0) && (
+            <p className="spot-detail__signals">{voteTotalsLine(spot)}</p>
+          )}
+          {media.galleryLinks.length > 0 && (
+            <section className="gallery-links">
+              <h3>More from this location</h3>
+              {media.galleryLinks.map((link) => (
+                <a
+                  key={link.id}
+                  href={link.url}
+                  target="_blank"
+                  rel="noreferrer noopener"
+                >
+                  {link.title}
+                  <Icon name="arrow" />
                 </a>
-              </li>
-            ))}
-          </ul>
+              ))}
+            </section>
+          )}
+          {spot.kind === "studio" && (
+            <Link
+              className="button button--secondary studio-link"
+              to={`/studios/${spot.slug}`}
+            >
+              Studio rates & booking
+              <Icon name="arrow" />
+            </Link>
+          )}
+        </div>
+        <section className="spot-detail__practical">
+          <h2>Before you go</h2>
+          <dl className="spot-detail__facts">
+            <Detail label="Cost" value={cost ?? "Not shared yet"} />
+            <Detail label="Cost notes" value={spot.costNotes} />
+            <Detail label="Hours" value={spot.hoursNotes} />
+            <Detail
+              label="Walk from parking"
+              value={
+                spot.walkMinutes === null
+                  ? "Not shared yet"
+                  : `${spot.walkMinutes} min`
+              }
+            />
+            <Detail label="Parking" value={spot.parkingNotes} />
+            <Detail
+              label="Terrain"
+              value={list(spot.terrain?.map(labelForTerrain) ?? null)}
+            />
+            <Detail
+              label="Accessibility"
+              value={list(
+                spot.accessibility?.map(labelForAccessibility) ?? null,
+              )}
+            />
+            <Detail label="Best light" value={list(spot.bestLight)} />
+            <Detail label="Best seasons" value={list(spot.bestSeasons)} />
+            <Detail
+              label="Group size"
+              value={
+                spot.maxGroupSize === null ? null : `Up to ${spot.maxGroupSize}`
+              }
+            />
+            <Detail
+              label="Dogs welcome"
+              value={
+                spot.dogFriendly === null
+                  ? null
+                  : spot.dogFriendly
+                    ? "Yes"
+                    : "No"
+              }
+            />
+          </dl>
+          {spot.permitUrl && (
+            <a
+              className="text-button"
+              href={spot.permitUrl}
+              rel="noreferrer noopener"
+              target="_blank"
+            >
+              Check permit information
+              <Icon name="arrow" />
+            </a>
+          )}
         </section>
-      )}
-
-      {spot.kind === "studio" && (
-        <p>
-          <Link to={`/studios/${spot.slug}`}>
-            Rate, booking and ownership →
-          </Link>
-        </p>
-      )}
-
-      {canEdit && (
-        <p>
-          <Link to={`/spots/${spot.slug}/edit`}>Edit this spot</Link>
-        </p>
-      )}
-
-      <ReportButton
-        targetType="spot"
-        targetId={spot.id}
-        signedIn={profile !== null}
-      />
-
-      <VotePanel
-        rows={shootTypeVotes}
-        shootAgain={shootAgain}
-        signedIn={profile !== null}
-      />
-
-      <CommentThread comments={comments} signedIn={profile !== null} />
+      </div>
+      <details className="community-notes">
+        <summary>
+          <span>
+            <span className="eyebrow">From the community</span>
+            <span>Field notes & recommendations</span>
+          </span>
+          <span className="community-notes__count">
+            {comments.length} {comments.length === 1 ? "note" : "notes"}
+            <Icon name="plus" />
+          </span>
+        </summary>
+        <VotePanel
+          rows={shootTypeVotes}
+          shootAgain={shootAgain}
+          signedIn={profile !== null}
+        />
+        <CommentThread comments={comments} signedIn={profile !== null} />
+      </details>
+      <footer className="spot-detail__footer">
+        {canEdit && <Link to={`/spots/${spot.slug}/edit`}>Edit this spot</Link>}
+        <ReportButton
+          targetType="spot"
+          targetId={spot.id}
+          signedIn={profile !== null}
+        />
+        <Link to={returnTo}>
+          Keep exploring
+          <Icon name="arrow" />
+        </Link>
+      </footer>
     </main>
   );
 }
 
 export function ErrorBoundary() {
   return (
-    <main className="spot-detail">
+    <main id="main-content" className="spot-detail">
       <h1>Spot not found</h1>
       <p>It may have been removed, or the link may be wrong.</p>
       <p>

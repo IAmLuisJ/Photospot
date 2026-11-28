@@ -101,7 +101,7 @@ const svg = (label: string, hue: number, tone: number) =>
   <defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
     <stop offset="0%" stop-color="hsl(${hue} 45% ${tone}%)"/>
     <stop offset="100%" stop-color="hsl(${(hue + 40) % 360} 35% ${Math.max(tone - 22, 12)}%)"/>
-  </gradient></defs>
+  </linearGradient></defs>
   <rect width="800" height="600" fill="url(#g)"/>
   <text x="40" y="560" font-family="system-ui,sans-serif" font-size="34" fill="rgba(255,255,255,.92)">${label}</text>
 </svg>`;
@@ -132,8 +132,18 @@ export async function seed(
     const slug = slugCandidates(s.name, "Grand Rapids", "MI")[0];
     if (
       await db.prepare("SELECT id FROM spots WHERE slug=?").bind(slug).first()
-    )
+    ) {
+      // Refresh only our deterministic development images. This also repairs
+      // older fixture markup without recreating spots, photos or counters.
+      for (const kind of ["scouting", "session"] as const) {
+        await bucket.put(
+          "seed/" + slug + "-" + kind + ".svg",
+          svg(s.name + " — " + kind, s.hue, kind === "session" ? 62 : 46),
+          { httpMetadata: { contentType: "image/svg+xml" } },
+        );
+      }
       continue;
+    }
     const id = crypto.randomUUID();
     const statements = [
       db

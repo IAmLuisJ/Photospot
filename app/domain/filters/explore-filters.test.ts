@@ -32,6 +32,10 @@ describe("parseExploreFilters", () => {
     expect(parse("view=gallery").view).toBe("gallery");
     expect(parse("view=map").view).toBe("map");
   });
+  it("trims and bounds a shared text search", () => {
+    expect(parse("q=%20Blue%20Bridge%20").query).toBe("Blue Bridge");
+    expect(parse("q=" + "x".repeat(200)).query).toHaveLength(120);
+  });
 
   // A URL is user-editable and arrives from strangers' links, so every field
   // has to survive nonsense without throwing.
@@ -69,6 +73,7 @@ describe("parseExploreFilters", () => {
 describe("filtersToSearchParams", () => {
   it("round-trips", () => {
     const filters: ExploreFilters = {
+      query: "river",
       viewport: { west: -86, south: 42, east: -85, north: 43 },
       zoom: 11,
       shootTypeId: 3,
@@ -81,7 +86,9 @@ describe("filtersToSearchParams", () => {
         dogFriendlyOnly: true,
       },
     };
-    expect(parseExploreFilters(filtersToSearchParams(filters))).toEqual(filters);
+    expect(parseExploreFilters(filtersToSearchParams(filters))).toEqual(
+      filters,
+    );
   });
 
   // Otherwise every pan writes a URL full of defaults and the share link is
@@ -96,8 +103,12 @@ describe("filtersToSearchParams", () => {
   });
 
   it("writes the view even when it is the default one", () => {
-    expect(filtersToSearchParams({ ...DEFAULT_FILTERS, view: "split" }).get("view")).toBe("split");
-    expect(filtersToSearchParams({ ...DEFAULT_FILTERS, view: "map" }).get("view")).toBe("map");
+    expect(
+      filtersToSearchParams({ ...DEFAULT_FILTERS, view: "split" }).get("view"),
+    ).toBe("split");
+    expect(
+      filtersToSearchParams({ ...DEFAULT_FILTERS, view: "map" }).get("view"),
+    ).toBe("map");
   });
 
   it("carries the attribute filters", () => {

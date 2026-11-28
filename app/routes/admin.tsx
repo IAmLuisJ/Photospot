@@ -1,3 +1,4 @@
+import { loginPath } from "~/lib/navigation";
 import { Link, redirect, data as routeData } from "react-router";
 import { getRequestContext } from "~/lib/request-context.server";
 import { getCurrentProfile } from "~/data/profiles";
@@ -16,14 +17,16 @@ export function meta() {
 
 const ACTIONS: readonly string[] = ["hide", "remove", "dismiss"];
 
-export async function loader({ request, context }: Route.LoaderArgs) {
+export async function loader({ request, context, url }: Route.LoaderArgs) {
   const { store, headers, env } = await getRequestContext(request, context);
   const profile = await getCurrentProfile(store);
-  if (!profile) throw redirect("/auth/login", { headers });
+  if (!profile) {
+    throw redirect(loginPath(url.pathname + url.search), { headers });
+  }
 
   try {
     const reports = await listReportQueue(store);
-    return routeData({ reports }, { headers });
+    return routeData({ reports, profile }, { headers });
   } catch {
     // admin_report_queue raises for a non-admin rather than returning nothing,
     // which is the whole reason it is a function and not a view: an empty
@@ -71,7 +74,7 @@ export default function AdminQueue({ loaderData }: Route.ComponentProps) {
   const open = reports.filter((r) => r.status === "open");
 
   return (
-    <main className="admin">
+    <main id="main-content" className="admin">
       <p>
         <Link to="/">← Back to the map</Link>
       </p>
@@ -97,7 +100,7 @@ export default function AdminQueue({ loaderData }: Route.ComponentProps) {
 
 export function ErrorBoundary() {
   return (
-    <main className="admin">
+    <main id="main-content" className="admin">
       <h1>Not available</h1>
       <p>This page is for moderators.</p>
       <p>

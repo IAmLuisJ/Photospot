@@ -1,4 +1,4 @@
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, redirect, useFetcher, data as routeData } from "react-router";
 import { getRequestContext } from "~/lib/request-context.server";
 import { getCurrentProfile } from "~/data/profiles";
@@ -24,28 +24,36 @@ import {
 } from "~/components/spot/AttributeFields";
 import { listShootTypes } from "~/data/spots";
 import type { Route } from "./+types/submit";
+import { exploreReturnTo, loginPath } from "~/lib/navigation";
+import { Icon } from "~/components/Icon";
 
 export function meta() {
   return [{ title: "Add a spot — Photospots" }];
 }
 
-export async function loader({ request, context }: Route.LoaderArgs) {
+export async function loader({ request, context, url }: Route.LoaderArgs) {
   const { store, headers, env } = await getRequestContext(request, context);
   const profile = await getCurrentProfile(store);
 
   // Submitting requires an account (spec §4.6). Browsing does not, so this is
   // the only place in the app that redirects to sign-in.
-  if (!profile) throw redirect("/auth/login", { headers });
+  if (!profile) {
+    throw redirect(loginPath(url.pathname + url.search), { headers });
+  }
 
   const shootTypes = await listShootTypes(store);
 
-  const url = new URL(request.url);
-  const lat = Number(url.searchParams.get("lat"));
-  const lng = Number(url.searchParams.get("lng"));
+  const lat = Number(url.searchParams.get("lat")?.trim() || NaN);
+  const lng = Number(url.searchParams.get("lng")?.trim() || NaN);
   const kind = url.searchParams.get("kind") === "studio" ? "studio" : "outdoor";
 
   const hasPin =
-    Number.isFinite(lat) && Number.isFinite(lng) && lat !== 0 && lng !== 0;
+    url.searchParams.has("lat") &&
+    url.searchParams.has("lng") &&
+    Number.isFinite(lat) &&
+    Number.isFinite(lng) &&
+    Math.abs(lat) <= 90 &&
+    Math.abs(lng) <= 180;
   const nearby: NearbySpot[] = hasPin
     ? await findNearbyDuplicates(store, { lat, lng }, kind)
     : [];
@@ -58,6 +66,7 @@ export async function loader({ request, context }: Route.LoaderArgs) {
       kind,
       nearby,
       photoBaseUrl: env.authOrigin,
+      returnTo: exploreReturnTo(url.searchParams.get("from")),
     },
     { headers },
   );
@@ -93,7 +102,10 @@ export async function action({ request, context }: Route.ActionArgs) {
   const input: SubmissionInput = {
     name: String(form.get("name") ?? ""),
     kind: form.get("kind") === "studio" ? "studio" : "outdoor",
-    position: { lat: Number(form.get("lat")), lng: Number(form.get("lng")) },
+    position: {
+      lat: Number(String(form.get("lat") ?? "").trim() || NaN),
+      lng: Number(String(form.get("lng") ?? "").trim() || NaN),
+    },
     description: String(form.get("description") ?? "") || null,
     locality: String(form.get("locality") ?? "") || null,
     region: String(form.get("region") ?? "") || null,
@@ -136,28 +148,53 @@ export async function action({ request, context }: Route.ActionArgs) {
     );
   }
 
-  return redirect(`/spots/${slug}`, { headers });
+  return redirect(
+    `/spots/${slug}?${new URLSearchParams({ from: exploreReturnTo(form.get("from")) })}`,
+    { headers },
+  );
 }
 
 interface StagedPhoto extends PhotoInput {
   previewName: string;
+  previewUrl: string;
 }
 
 export default function Submit({ loaderData }: Route.ComponentProps) {
-  const { profile, shootTypes, position, kind, nearby } = loaderData;
+  const { profile, shootTypes, position, kind, nearby, returnTo } = loaderData;
   const fetcher = useFetcher<typeof action>();
   const [staged, setStaged] = useState<StagedPhoto[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const previewUrls = useRef(new Set<string>());
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+      for (const url of previewUrls.current) URL.revokeObjectURL(url);
+    };
+  }, []);
 
   const onFiles = useCallback(
     async (files: FileList | null, photoKind: "scouting" | "session") => {
       if (!files || files.length === 0) return;
+      const remaining =
+        MAX_PHOTOS_PER_KIND -
+        staged.filter((photo) => photo.kind === photoKind).length;
+      if (files.length > remaining) {
+        setUploadError(
+          `Choose up to ${remaining} more ${photoKind} ${remaining === 1 ? "photo" : "photos"}.`,
+        );
+        return;
+      }
       setUploading(true);
       setUploadError(null);
       try {
         for (const file of Array.from(files)) {
           const uploaded = await uploadSpotPhoto(file);
+          if (!mounted.current) return;
+          const previewUrl = URL.createObjectURL(file);
+          previewUrls.current.add(previewUrl);
           setStaged((prev) => [
             ...prev,
             {
@@ -168,6 +205,7 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
               creditUrl: null,
               caption: null,
               previewName: file.name,
+              previewUrl,
             },
           ]);
         }
@@ -177,7 +215,7 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
         setUploading(false);
       }
     },
-    [],
+    [staged],
   );
 
   const errors = fetcher.data?.errors ?? [];
@@ -186,25 +224,48 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
 
   if (!position) {
     return (
-      <main className="submit">
+      <main id="main-content" className="submit">
         <h1>Add a spot</h1>
         <p>
-          Open the map, find the place, and use “Add a spot here”. The pin comes
-          first so we can check whether it is already on the map.
+          Start by placing a pin. Move the map to the location you want to
+          share.
         </p>
+        <Link className="button" to="/?add=1&view=map">
+          Choose a location
+          <Icon name="arrow" />
+        </Link>
         <p>
-          <Link to="/">← Back to the map</Link>
+          <Link className="back-link" to={returnTo}>
+            <Icon name="back" />
+            Back to locations
+          </Link>
         </p>
       </main>
     );
   }
 
   return (
-    <main className="submit">
+    <main id="main-content" className="submit">
       <p>
-        <Link to="/">← Back to the map</Link>
+        <Link className="back-link" to={returnTo}>
+          <Icon name="back" />
+          Back to locations
+        </Link>
       </p>
-      <h1>Add a spot</h1>
+      <p className="eyebrow">Pass on a good find</p>
+      <h1>Share a spot.</h1>
+      <p className="submit__intro">
+        A name, a few photos, and your local knowledge.
+      </p>
+      <p className="submit__pin">
+        <Icon name="pin" />
+        Location chosen{" "}
+        <Link
+          to={`/?add=1&view=map&w=${position.lng - 0.005}&e=${position.lng + 0.005}&s=${position.lat - 0.005}&n=${position.lat + 0.005}`}
+        >
+          Adjust pin
+        </Link>
+      </p>
 
       {nearby.length > 0 && (
         <section className="submit__duplicates">
@@ -226,19 +287,36 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
       )}
 
       <fetcher.Form method="post" className="submit__form">
+        <input type="hidden" name="from" value={returnTo} />
         <input type="hidden" name="lat" value={position.lat} />
         <input type="hidden" name="lng" value={position.lng} />
         <input type="hidden" name="kind" value={kind} />
-        <input type="hidden" name="photos" value={JSON.stringify(staged)} />
+        <input
+          type="hidden"
+          name="photos"
+          value={JSON.stringify(
+            staged.map(({ previewName, previewUrl, ...photo }) => photo),
+          )}
+        />
 
         <label>
-          Name
-          <input name="name" required maxLength={120} />
+          Location name
+          <input
+            name="name"
+            required
+            maxLength={120}
+            placeholder="A name other photographers will recognize"
+            aria-describedby={errorFor("name") ? "name-error" : undefined}
+          />
         </label>
-        {errorFor("name") && <p role="alert">{errorFor("name")}</p>}
+        {errorFor("name") && (
+          <p id="name-error" role="alert">
+            {errorFor("name")}
+          </p>
+        )}
 
         <fieldset>
-          <legend>What is it good for?</legend>
+          <legend>01 / What would you shoot here?</legend>
           {shootTypes.map((t) => (
             <label key={t.id}>
               <input type="checkbox" name="shootTypeIds" value={t.id} />
@@ -251,7 +329,7 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
         )}
 
         <fieldset>
-          <legend>Photos</legend>
+          <legend>02 / Show the place</legend>
           <p>
             Scouting shots show what the place looks like. Session photos are
             work you shot there — up to {MAX_PHOTOS_PER_KIND} of each.
@@ -262,6 +340,11 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
               type="file"
               accept="image/*"
               multiple
+              disabled={
+                uploading ||
+                staged.filter((photo) => photo.kind === "scouting").length >=
+                  MAX_PHOTOS_PER_KIND
+              }
               onChange={(e) => onFiles(e.currentTarget.files, "scouting")}
             />
           </label>
@@ -271,6 +354,11 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
               type="file"
               accept="image/*"
               multiple
+              disabled={
+                uploading ||
+                staged.filter((photo) => photo.kind === "session").length >=
+                  MAX_PHOTOS_PER_KIND
+              }
               onChange={(e) => onFiles(e.currentTarget.files, "session")}
             />
           </label>
@@ -281,6 +369,11 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
           <ul className="submit__staged">
             {staged.map((p, i) => (
               <li key={p.storagePath}>
+                <img
+                  className="submit__preview"
+                  src={p.previewUrl}
+                  alt={p.previewName}
+                />
                 {p.previewName} — {p.kind}
                 {p.kind === "session" && (
                   <>
@@ -288,18 +381,19 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
                       <input
                         type="checkbox"
                         checked={p.rightsAttested}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const rightsAttested = e.currentTarget.checked;
                           setStaged((prev) =>
                             prev.map((q, j) =>
                               j === i
                                 ? {
                                     ...q,
-                                    rightsAttested: e.currentTarget.checked,
+                                    rightsAttested,
                                   }
                                 : q,
                             ),
-                          )
-                        }
+                          );
+                        }}
                       />
                       I shot this and have the right to post it
                     </label>
@@ -307,27 +401,30 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
                       Credit
                       <input
                         value={p.creditName ?? ""}
-                        onChange={(e) =>
+                        onChange={(e) => {
+                          const creditName = e.currentTarget.value || null;
                           setStaged((prev) =>
                             prev.map((q, j) =>
                               j === i
                                 ? {
                                     ...q,
-                                    creditName: e.currentTarget.value || null,
+                                    creditName,
                                   }
                                 : q,
                             ),
-                          )
-                        }
+                          );
+                        }}
                       />
                     </label>
                   </>
                 )}
                 <button
                   type="button"
-                  onClick={() =>
-                    setStaged((prev) => prev.filter((_, j) => j !== i))
-                  }
+                  onClick={() => {
+                    URL.revokeObjectURL(p.previewUrl);
+                    previewUrls.current.delete(p.previewUrl);
+                    setStaged((prev) => prev.filter((_, j) => j !== i));
+                  }}
                 >
                   Remove
                 </button>
@@ -337,19 +434,21 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
         </fieldset>
         {errorFor("photos") && <p role="alert">{errorFor("photos")}</p>}
 
-        <details>
-          <summary>Add details</summary>
+        <details className="submit__optional">
+          <summary>
+            03 / Add practical details <span>Optional</span>
+          </summary>
           <label>
             Description
             <textarea name="description" rows={3} />
           </label>
           <label>
             Town or city
-            <input name="locality" defaultValue="Grand Rapids" />
+            <input name="locality" />
           </label>
           <label>
             State
-            <input name="region" defaultValue="MI" />
+            <input name="region" />
           </label>
 
           <AttributeFields
@@ -365,8 +464,12 @@ export default function Submit({ loaderData }: Route.ComponentProps) {
 
         {errorFor("form") && <p role="alert">{errorFor("form")}</p>}
 
-        <button type="submit" disabled={uploading || fetcher.state !== "idle"}>
-          {fetcher.state === "idle" ? "Add this spot" : "Saving…"}
+        <button
+          className="button"
+          type="submit"
+          disabled={uploading || fetcher.state !== "idle"}
+        >
+          {fetcher.state === "idle" ? "Share this location" : "Saving…"}
         </button>
       </fetcher.Form>
     </main>

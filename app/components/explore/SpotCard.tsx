@@ -1,6 +1,7 @@
 import { Link } from "react-router";
 import type { SpotSummary } from "~/data/spots";
 import { photoUrl } from "~/lib/photo-url";
+import { Icon } from "~/components/Icon";
 
 const plural = (n: number, one: string, many: string) =>
   `${n} ${n === 1 ? one : many}`;
@@ -27,6 +28,7 @@ export interface SpotCardProps {
   selected?: boolean;
   variant?: "row" | "tile";
   onHover?: (slug: string | null) => void;
+  returnTo?: string;
 }
 
 export function SpotCard({
@@ -35,28 +37,35 @@ export function SpotCard({
   selected = false,
   variant = "row",
   onHover,
+  returnTo = "/",
 }: SpotCardProps) {
   const cover = photoUrl(photoBaseUrl, spot.coverPhotoPath);
 
   return (
     <Link
-      to={`/spots/${spot.slug}`}
+      to={`/spots/${spot.slug}?${new URLSearchParams({ from: returnTo })}`}
       className={`spot-card spot-card--${variant}${selected ? " spot-card--selected" : ""}`}
       onMouseEnter={() => onHover?.(spot.slug)}
       onMouseLeave={() => onHover?.(null)}
+      onFocus={() => onHover?.(spot.slug)}
+      onBlur={() => onHover?.(null)}
       aria-current={selected ? "true" : undefined}
     >
       {cover ? (
         <img className="spot-card__image" src={cover} alt="" loading="lazy" />
       ) : (
-        <div
-          className="spot-card__image spot-card__image--empty"
-          aria-hidden="true"
-        />
+        <div className="spot-card__image spot-card__image--empty">
+          <Icon name="photos" />
+          <span>Room for a first photo</span>
+        </div>
       )}
       <div className="spot-card__body">
         <h3 className="spot-card__name">{spot.name}</h3>
         <p className="spot-card__summary">{cardSummaryLine(spot)}</p>
+        <span className="spot-card__action">
+          Explore location
+          <Icon name="arrow" />
+        </span>
       </div>
     </Link>
   );

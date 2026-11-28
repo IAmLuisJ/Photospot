@@ -7,13 +7,19 @@ import {
   appRequestContext,
   runtimeContext,
 } from "../../app/lib/runtime-context";
-import { action as submit } from "../../app/routes/submit";
+import {
+  action as submit,
+  loader as loadSubmit,
+} from "../../app/routes/submit";
 import { action as edit } from "../../app/routes/spots.$slug.edit";
 import { action as vote } from "../../app/routes/spots.$slug";
 import { action as moderate } from "../../app/routes/admin";
 import { action as upload } from "../../app/routes/uploads";
 import { action as logout } from "../../app/routes/auth.logout";
-import { action as login } from "../../app/routes/auth.login";
+import {
+  action as login,
+  loader as loadLogin,
+} from "../../app/routes/auth.login";
 
 describe("HTTP action boundaries with real Better Auth sessions", () => {
   let t: ReturnType<typeof createTestDatabase>;
@@ -125,6 +131,97 @@ describe("HTTP action boundaries with real Better Auth sessions", () => {
         .first("name"),
     ).toBe("River park");
     expect(photoPut).not.toHaveBeenCalled();
+  });
+  it("preserves a chosen pin and browsing context through the real sign-in handler", async () => {
+    const target =
+      "/submit?lat=42.96&lng=-85.67&from=%2F%3Fpane%3Dmap%26type%3D2";
+    let location = "";
+    try {
+      const loadArgs = args(
+        new Request(
+          origin +
+            target.replace("/submit?", "/submit.data?") +
+            "&_routes=routes/submit",
+        ),
+      );
+      loadArgs.url = new URL(origin + target);
+      await loadSubmit(loadArgs);
+    } catch (redirect) {
+      expect(redirect).toBeInstanceOf(Response);
+      location = (redirect as Response).headers.get("Location")!;
+    }
+    expect(new URL(location, origin).searchParams.get("returnTo")).toBe(target);
+    const started = await login(
+      args(
+        post(location, {
+          intent: "magic-link",
+          email: "alice@example.com",
+          returnTo: target,
+        }),
+      ),
+    );
+    expect(started).toMatchObject({ data: { sent: true } });
+    const auth = createAuth(env());
+    const redeemed = await auth.handler(
+      new Request(
+        deliveries.at(-1)!.text.match(/http:\/\/localhost:5173\/\S+/)![0],
+      ),
+    );
+    const next = new URL(redeemed.headers.get("Location")!, origin);
+    expect(next.pathname + next.search).toBe(target);
+    const cookie = redeemed.headers
+      .getSetCookie()
+      .map((value) => value.split(";")[0])
+      .join("; ");
+    const page = await loadSubmit(
+      args(new Request(origin + target, { headers: { Cookie: cookie } })),
+    );
+    expect(page.data).toMatchObject({
+      position: { lat: 42.96, lng: -85.67 },
+      returnTo: "/?pane=map&type=2",
+    });
+    await expect(
+      loadLogin(
+        args(new Request(origin + location, { headers: { Cookie: cookie } })),
+      ),
+    ).rejects.toMatchObject({ status: 302, headers: expect.any(Headers) });
+  });
+
+  it("falls back to explore for a forged external sign-in callback", async () => {
+    await login(
+      args(
+        post("/auth/login", {
+          intent: "magic-link",
+          email: "alice@example.com",
+          returnTo: "//other.example/",
+        }),
+      ),
+    );
+    const redeemed = await createAuth(env()).handler(
+      new Request(
+        deliveries.at(-1)!.text.match(/http:\/\/localhost:5173\/\S+/)![0],
+      ),
+    );
+    expect(new URL(redeemed.headers.get("Location")!, origin).href).toBe(
+      origin + "/",
+    );
+  });
+
+  it("accepts zero coordinates and treats a blank pin as unchosen", async () => {
+    const { cookie } = await signIn();
+    const load = (query: string) =>
+      loadSubmit(
+        args(
+          new Request(origin + "/submit?" + query, {
+            headers: { Cookie: cookie },
+          }),
+        ),
+      );
+    expect((await load("lat=0&lng=0")).data.position).toEqual({
+      lat: 0,
+      lng: 0,
+    });
+    expect((await load("lat=&lng=")).data.position).toBeNull();
   });
   it.each([
     "{",

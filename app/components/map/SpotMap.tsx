@@ -26,11 +26,19 @@ export interface SpotMarker {
 
 /** The subset of the MapLibre API this module reads, so it can be tested without a canvas. */
 export interface MapLike {
-  getBounds(): { getWest(): number; getSouth(): number; getEast(): number; getNorth(): number };
+  getBounds(): {
+    getWest(): number;
+    getSouth(): number;
+    getEast(): number;
+    getNorth(): number;
+  };
   getZoom(): number;
 }
 
-export function markersFor(spots: SpotSummary[], selectedSlug?: string): SpotMarker[] {
+export function markersFor(
+  spots: SpotSummary[],
+  selectedSlug?: string,
+): SpotMarker[] {
   return spots.map((s) => ({
     id: s.id,
     slug: s.slug,
@@ -42,7 +50,10 @@ export function markersFor(spots: SpotSummary[], selectedSlug?: string): SpotMar
   }));
 }
 
-export function boundsFromMap(map: MapLike): { viewport: Bounds; zoom: number } {
+export function boundsFromMap(map: MapLike): {
+  viewport: Bounds;
+  zoom: number;
+} {
   const b = map.getBounds();
   return {
     viewport: {
@@ -61,7 +72,11 @@ export interface SpotMapProps {
   zoom: number;
   styleUrl: string;
   selectedSlug?: string;
-  onViewportChange: (next: { viewport: Bounds; zoom: number }) => void;
+  onViewportChange: (next: {
+    viewport: Bounds;
+    zoom: number;
+    center: { lat: number; lng: number };
+  }) => void;
   onSelect: (slug: string) => void;
 }
 
@@ -82,6 +97,7 @@ export function SpotMap({
   const container = useRef<HTMLDivElement>(null);
   const map = useRef<MapLibreMap | null>(null);
   const markers = useRef<Marker[]>([]);
+  const lastViewport = useRef(viewport);
   const onViewportChangeRef = useRef(onViewportChange);
   onViewportChangeRef.current = onViewportChange;
 
@@ -97,20 +113,60 @@ export function SpotMap({
       ],
       attributionControl: { compact: true },
     });
-    instance.addControl(new NavigationControl({ showCompass: false }), "top-right");
+    instance.addControl(
+      new NavigationControl({ showCompass: false }),
+      "top-right",
+    );
+    const observer = new ResizeObserver(() => {
+      if (container.current?.clientWidth && container.current.clientHeight)
+        instance.resize();
+    });
+    observer.observe(container.current);
 
     // `moveend` rather than `move`: one event per gesture instead of one per
     // frame. Snapping to the grid then means small pans reuse the same query.
-    instance.on("moveend", () => onViewportChangeRef.current(boundsFromMap(instance)));
+    const reportViewport = () => {
+      if (!container.current?.clientWidth || !container.current.clientHeight)
+        return;
+      const center = instance.getCenter();
+      onViewportChangeRef.current({
+        ...boundsFromMap(instance),
+        center: { lat: center.lat, lng: center.lng },
+      });
+    };
+    instance.on("moveend", reportViewport);
+    instance.once("load", reportViewport);
 
     map.current = instance;
     return () => {
+      observer.disconnect();
       instance.remove();
       map.current = null;
     };
     // Mount once. Later prop changes are handled by the effects below.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // URL navigation and the reset/widen controls must move the actual camera.
+  // Ignore the rounded bounds emitted by the map itself to prevent a loop.
+  useEffect(() => {
+    const instance = map.current;
+    const previous = lastViewport.current;
+    lastViewport.current = viewport;
+    const keys = ["west", "south", "east", "north"] as const;
+    if (!instance || keys.every((key) => previous[key] === viewport[key]))
+      return;
+    const actual = boundsFromMap(instance).viewport;
+    if (keys.every((key) => Math.abs(actual[key] - viewport[key]) < 0.00001))
+      return;
+    instance.fitBounds(
+      [
+        [viewport.west, viewport.south],
+        [viewport.east, viewport.north],
+      ],
+      { animate: false },
+    );
+  }, [viewport]);
 
   useEffect(() => {
     const instance = map.current;
@@ -119,7 +175,8 @@ export function SpotMap({
     for (const m of markers.current) m.remove();
     markers.current = markersFor(spots, selectedSlug).map((marker) => {
       const el = document.createElement("button");
-      el.className = marker.className + (marker.selected ? " spot-pin--selected" : "");
+      el.className =
+        marker.className + (marker.selected ? " spot-pin--selected" : "");
       el.type = "button";
       el.setAttribute("aria-label", marker.name);
       el.addEventListener("click", (event) => {
